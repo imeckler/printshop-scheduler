@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}} - Sauna Booking</title>
+    <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+    <header>
+        <h1>Sauna Booking System</h1>
+        {{#if user}}
+            <div class="user-info">
+                Welcome, {{user.name}}! 
+                <a href="/logout">Logout</a>
+            </div>
+        {{/if}}
+    </header>
+    
+    <main>
+        {{{body}}}
+    </main>
+    
+    <footer>
+        <p>&copy; 2025 Sauna Booking System</p>
+    </footer>
+</body>
+</html>
