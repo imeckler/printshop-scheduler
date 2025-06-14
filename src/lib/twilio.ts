@@ -1,11 +1,14 @@
 import twilio from 'twilio';
 import { getConfig, TwilioConfig } from './config';
 import { randomInt } from 'crypto';
-import { IVerifiedUser } from '../models/VerifiedUser.js';
+import { User } from './dbtypes';
+import { eq } from 'drizzle-orm';
+import { db } from './db';
+import { users } from './schema';
 
 const config = getConfig();
 
-export type VerificationResult = { status: 'failed' } | { status: 'ok', record: IVerifiedUser, newUser: boolean };
+export type VerificationResult = { status: 'failed' } | { status: 'ok', record: User, newUser: boolean };
 
 class TwilioService {
     private client: twilio.Twilio | null = null;
@@ -45,9 +48,8 @@ class TwilioService {
      */
     async hasDoneExpensiveVerification(phoneNumber: string): Promise<boolean> {
         try {
-            const verifiedUser = await import('../models/VerifiedUser.js').then(m => m.default);
-            const userRecord = await verifiedUser.findOne({
-              phone: phoneNumber,
+            const userRecord = await db.query.users.findFirst({
+              where: eq(users.phoneE164, phoneNumber)
             });
             return (userRecord != null);
         } catch (error) {
@@ -80,25 +82,21 @@ class TwilioService {
             if (hasBeenVerified) {
                 // For previously verified numbers, generate and send our own code
                 const code = this.generateVerificationCode();
+
+                const [userRecord] = await db
+                  .update(users)
+                  .set({
+                    verificationCode: code,
+                    // Set the verification code with a 10-minute expiry
+                    verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000)
+                  })
+                  .where(eq(users.phoneE164, phoneNumber))
+                  .returning();
                 
-                // Store the verification code in the database
-                const verifiedUser = await import('../models/VerifiedUser.js').then(m => m.default);
-                
-                // Find existing user or create a new placeholder
-                let userRecord = await verifiedUser.findOne({ phone: phoneNumber });
                 if (!userRecord) {
-                    userRecord = new verifiedUser({
-                        phone: phoneNumber,
-                        name: 'Verified User',
-                        lastVerified: new Date()
-                    });
+                  throw 'error'
                 }
-                
-                // Set the verification code with a 10-minute expiry
-                userRecord.verificationCode = code;
-                userRecord.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
-                await userRecord.save();
-                
+
                 // Send the code via regular SMS
                 // Use messaging service if configured, otherwise use from phone number
                 if (this.messagingServiceSid) {
@@ -156,31 +154,44 @@ class TwilioService {
 
         try {
             // Check if the phone number has been verified before
-            const verifiedUser = await import('../models/VerifiedUser.js').then(m => m.default);
-            const userRecord = await verifiedUser.findOne({ 
-                phone: phoneNumber,
+            const userRecord = await db.query.users.findFirst({
+              where: eq(users.phoneE164, phoneNumber)
             });
 
             if (userRecord != null) {
-              console.log('eyo', userRecord.verificationCode, code, (userRecord.verificationCode != code));
-                // For previously verified numbers, check against our database
-                if (userRecord.verificationCode != code) {
-                  console.log('huh');
-                  return { status: 'failed' };
-                }
+              if (!userRecord.verificationCode || !userRecord.verificationCodeExpires) {
+                // throw new Error(`verification code not found for ${phoneNumber}`);
+                return { status: 'failed' };
+              }
 
-                if (userRecord.verificationCodeExpires && userRecord.verificationCodeExpires > new Date()) {
-                    
-                    // Update verification status and clear code
-                    userRecord.lastVerified = new Date();
-                    userRecord.verificationCode = null;
-                    userRecord.verificationCodeExpires = null;
-                    
-                    await userRecord.save();
+              // For previously verified numbers, check against our database
+              if (userRecord.verificationCode != code) {
+                return { status: 'failed' };
+              }
+
+              if (userRecord.verificationCodeExpires > new Date()) {
+                  // Update verification status and clear code
+                  userRecord.lastVerified = new Date();
+                  userRecord.verificationCode = null;
+                  userRecord.verificationCodeExpires = null;
+
+                  const res = await db
+                    .update(users)
+                    .set({
+                      lastVerified: new Date(),
+                      verificationCode: null,
+                      verificationCodeExpires: null,
+                    })
+                    .where(eq(users.userId, userRecord.userId))
+                    .execute();
+                  if (res.rowCount == 1) {
                     return {record: userRecord, status: 'ok', newUser: false};
-                } else {
-                  return { status: 'failed' };
-                }
+                  } else {
+                    throw new Error(`update failed ${phoneNumber}`);
+                  }
+              } else {
+                return { status: 'failed' };
+              }
             } else {
                 // For first-time verification, use the Verify API
                 if (!this.verifySid) {
@@ -194,12 +205,15 @@ class TwilioService {
                 
                 if (verificationCheck.status === 'approved') {
                     // Create a new verified user record
-                    const userRecord = new verifiedUser({
-                        phone: phoneNumber,
-                        lastVerified: new Date()
-                    });
-                    
-                    await userRecord.save();
+                    const [userRecord] = await db.insert(users).values({
+                      phoneE164: phoneNumber,
+                      lastVerified: new Date(),
+                    }).returning();
+
+                    if (!userRecord) {
+                      return { status: 'failed' };
+                    }
+
                     return { status: 'ok', newUser: true, record: userRecord };
                 }
                 
@@ -209,16 +223,6 @@ class TwilioService {
             console.error('Error checking verification code:', error);
             return { status: 'failed' };
         }
-    }
-
-
-    /**
-     * Checks if phone verification is required based on configuration
-     * @returns boolean indicating if phone verification is required
-     */
-    isVerificationRequired(): boolean {
-        const twilioConfig = config.twilio as TwilioConfig;
-        return this.isEnabled && twilioConfig.phone_verification_required;
     }
 }
 
