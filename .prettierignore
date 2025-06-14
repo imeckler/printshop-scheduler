@@ -1,0 +1,8 @@
+node_modules/
+build/
+public/js/
+*.log
+.env*
+config/config.toml
+schema
+todo

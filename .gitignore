@@ -1,0 +1,35 @@
+node_modules/
+build/
+public/js/
+*.log
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Config files with secrets
+config/config.toml
+
+# Database
+*.db
+*.sqlite
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
