@@ -20,6 +20,9 @@ export interface AppConfig {
     database: {
         postgresql_url: string;
     };
+    jwt: {
+      secret: string;
+    };
     twilio?: TwilioConfig;
 }
 
