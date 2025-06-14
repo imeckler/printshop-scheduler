@@ -1,0 +1,19 @@
+[general]
+domain = "localhost:8080"
+port = "8080"
+email = "admin@example.com"
+site_name = "Sauna Booking System"
+
+[database]
+postgresql_url = "postgresql://autobana_user:autobana_password@localhost:5432/autobana"
+
+[jwt]
+secret = "your-super-secret-jwt-key-change-this-in-production"
+
+# Twilio configuration (optional - comment out if not using)
+[twilio]
+account_sid = "your_twilio_account_sid"
+auth_token = "your_twilio_auth_token"
+verify_service_sid = "your_twilio_verify_service_sid"
+messaging_service_sid = "your_twilio_messaging_service_sid"
+phone_number = "+1234567890"
