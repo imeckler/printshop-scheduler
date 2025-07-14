@@ -1,6 +1,7 @@
 /** @jsx jsx */
 /** @jsxFrag Fragment */
 import { jsx, Fragment } from 'hono/jsx/dom';
+import { render } from 'hono/jsx/dom';
 import { sendVerification, checkVerification, isSuccessResponse } from './apiClient';
 
 class LoginManager {
@@ -30,7 +31,8 @@ class LoginManager {
   private async handleSendVerification(e: Event): Promise<void> {
     e.preventDefault();
 
-    const phoneNumber = this.phoneNumberInput.value;
+    // const phoneNumber = this.phoneNumberInput.value;
+    const phoneNumber = (window as any).signInTel.getNumber();
 
     try {
       const result = await sendVerification({ phoneNumber });
@@ -50,7 +52,7 @@ class LoginManager {
   private async handleVerifyCode(e: Event): Promise<void> {
     e.preventDefault();
 
-    const phoneNumber = this.phoneNumberInput.value;
+    const phoneNumber = (window as any).signInTel.getNumber();
     const code = this.verificationCodeInput.value;
 
     try {
@@ -74,7 +76,7 @@ class LoginManager {
     const messageElement = <p style={`color: ${color};`}>{message}</p>;
 
     this.messageDiv.innerHTML = '';
-    this.messageDiv.appendChild(messageElement);
+    render(messageElement, this.messageDiv);
   }
 }
 
