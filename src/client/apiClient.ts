@@ -48,7 +48,7 @@ export async function checkVerification(
 export async function getAvailableSlots(
   query: AvailableSlotsQuery
 ): Promise<AvailableSlotsApiResponse> {
-  const params = new URLSearchParams(query);
+  const params = new URLSearchParams(query as Record<string, string>);
   return request<AvailableSlotsApiResponse>(`/available-slots?${params}`);
 }
 
