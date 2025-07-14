@@ -1,8 +1,10 @@
 /** @jsx jsx */
 /** @jsxFrag Fragment */
 import { jsx, Fragment } from 'hono/jsx/dom';
+import { render } from 'hono/jsx/dom';
 import { getAvailableSlots, bookSlot, isSuccessResponse } from './apiClient';
 import { AvailableSlot } from '../lib/apiTypes';
+import * as moment from 'moment-timezone';
 
 interface TimeSlotOption {
   timeRange: string;
@@ -15,12 +17,17 @@ class BookingManager {
   private timeSelect: HTMLSelectElement;
   private slotsContainer: HTMLElement;
   private loadingDiv: HTMLElement;
+  private userBookings: any[] = [];
 
   constructor() {
     this.dateInput = document.getElementById('bookingDate') as HTMLInputElement;
     this.timeSelect = document.getElementById('timeSelect') as HTMLSelectElement;
     this.slotsContainer = document.getElementById('slotsContainer') as HTMLElement;
     this.loadingDiv = document.getElementById('loading') as HTMLElement;
+
+    // Set today's date as default in LA timezone
+    const todayLA = moment.tz('America/Los_Angeles');
+    this.dateInput.value = todayLA.format('YYYY-MM-DD');
 
     this.setupEventListeners();
     this.populateTimeOptions();
@@ -34,7 +41,7 @@ class BookingManager {
 
   private populateTimeOptions(): void {
     const allDayOption = <option value="all-day">All day</option>;
-    this.timeSelect.appendChild(allDayOption);
+    render(allDayOption, this.timeSelect);
 
     for (let hour = 6; hour <= 22; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
@@ -46,33 +53,53 @@ class BookingManager {
         });
 
         const option = <option value={timeString}>{displayTime}</option>;
-        this.timeSelect.appendChild(option);
+        const tempContainer = document.createElement('div');
+        render(option, tempContainer);
+        if (tempContainer.firstElementChild) {
+          this.timeSelect.appendChild(tempContainer.firstElementChild);
+        }
       }
     }
   }
 
   private getTimeRange(): { start: Date; end: Date } {
-    const selectedDate = new Date(this.dateInput.value);
+    const selectedDateStr = this.dateInput.value;
     const selectedTime = this.timeSelect.value;
+    const nowLA = moment.tz('America/Los_Angeles');
+    const todayLA = nowLA.clone().startOf('day');
+    const selectedDateLA = moment.tz(selectedDateStr, 'America/Los_Angeles');
 
     if (selectedTime === 'all-day') {
-      const startDate = new Date(selectedDate);
-      startDate.setHours(0, 0, 0, 0);
+      let startDateLA = selectedDateLA.clone().startOf('day');
+      
+      // If selected date is today, start from current LA time, otherwise start from midnight
+      if (selectedDateLA.isSame(todayLA, 'day')) {
+        startDateLA = nowLA.clone();
+      }
 
-      const endDate = new Date(selectedDate);
-      endDate.setHours(23, 59, 59, 999);
+      const endDateLA = selectedDateLA.clone().endOf('day');
 
-      return { start: startDate, end: endDate };
+      // Convert LA times to UTC for server
+      return { 
+        start: startDateLA.utc().toDate(), 
+        end: endDateLA.utc().toDate() 
+      };
     } else {
       const [hour, minute] = selectedTime.split(':').map(Number);
 
-      const startDate = new Date(selectedDate);
-      startDate.setHours(hour - 1, minute, 0, 0);
+      const startDateLA = selectedDateLA.clone().hour(hour - 1).minute(minute).second(0);
+      const endDateLA = selectedDateLA.clone().hour(hour + 2).minute(minute).second(0);
 
-      const endDate = new Date(selectedDate);
-      endDate.setHours(hour + 2, minute, 0, 0);
+      // If selected date is today and the start time is in the past, start from now
+      if (selectedDateLA.isSame(todayLA, 'day') && startDateLA.isBefore(nowLA)) {
+        startDateLA.set(nowLA.toObject());
+      }
 
-      return { start: startDate, end: endDate };
+      // Convert LA times to UTC for server
+      return { 
+        start: startDateLA.utc().toDate(), 
+        end: endDateLA.utc().toDate() 
+      };
     }
   }
 
@@ -80,17 +107,22 @@ class BookingManager {
     this.showLoading(true);
 
     const { start, end } = this.getTimeRange();
+    console.log(start, end);
 
     try {
-      const result = await getAvailableSlots({
-        start: start.toISOString(),
-        stop: end.toISOString(),
-      });
+      // Load available slots and user bookings in parallel
+      const [slotsResult, bookingsResult] = await Promise.all([
+        getAvailableSlots({
+          start: start.toISOString(),
+          stop: end.toISOString(),
+        }),
+        this.loadUserBookingsInRange(start, end)
+      ]);
 
-      if (isSuccessResponse(result)) {
-        this.renderTimeSlots(result.data);
+      if (isSuccessResponse(slotsResult)) {
+        this.renderTimeSlots(slotsResult.data);
       } else {
-        this.showError(result.error);
+        this.showError(slotsResult.error);
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('401')) {
@@ -103,12 +135,46 @@ class BookingManager {
     }
   }
 
+  private async loadUserBookingsInRange(start: Date, end: Date): Promise<void> {
+    try {
+      const response = await fetch(`/user-bookings-in-range?start=${start.toISOString()}&stop=${end.toISOString()}`);
+      if (response.ok) {
+        const result = await response.json();
+        this.userBookings = result.data || [];
+      } else {
+        this.userBookings = [];
+      }
+    } catch (error) {
+      console.error('Error loading user bookings:', error);
+      this.userBookings = [];
+    }
+  }
+
+  private hasBookingConflict(slot: AvailableSlot): boolean {
+    const slotStart = moment.utc(slot.slot.start);
+    const slotEnd = moment.utc(slot.slot.end);
+
+    return this.userBookings.some(booking => {
+      if (booking.status !== 'confirmed') return false;
+      
+      // Parse booking slot range like "[2025-01-01 10:00:00+00,2025-01-01 10:30:00+00)"
+      const match = booking.slot.match(/\[([^,]+),([^)]+)\)/);
+      if (!match) return false;
+      
+      const bookingStart = moment.utc(match[1]);
+      const bookingEnd = moment.utc(match[2]);
+      
+      // Check if slots overlap
+      return slotStart.isBefore(bookingEnd) && slotEnd.isAfter(bookingStart);
+    });
+  }
+
   private renderTimeSlots(slots: AvailableSlot[]): void {
     this.slotsContainer.innerHTML = '';
 
     if (slots.length === 0) {
       const noSlotsMsg = <p>No available slots for the selected time range.</p>;
-      this.slotsContainer.appendChild(noSlotsMsg);
+      render(noSlotsMsg, this.slotsContainer);
       return;
     }
 
@@ -120,17 +186,26 @@ class BookingManager {
       </div>
     );
 
-    this.slotsContainer.appendChild(flexContainer);
+    render(flexContainer, this.slotsContainer);
   }
 
   private TimeSlotCard({ timeSlotOption }: { timeSlotOption: TimeSlotOption }) {
+    const hasConflict = this.hasBookingConflict(timeSlotOption.slot);
+    const cardClass = hasConflict ? "time-slot-card conflicted" : "time-slot-card";
+    
     return (
-      <div className="time-slot-card" onClick={() => this.bookSlot(timeSlotOption.slot)}>
+      <div 
+        className={cardClass} 
+        onClick={hasConflict ? undefined : () => this.bookSlot(timeSlotOption.slot)}
+        style={hasConflict ? { cursor: 'not-allowed' } : undefined}
+      >
         <div className="time-slot-time">{timeSlotOption.timeRange}</div>
         <div className="time-slot-price">${(timeSlotOption.slot.price / 100).toFixed(2)}</div>
         <div className="time-slot-availability">
-          {timeSlotOption.availableCount} unit{timeSlotOption.availableCount !== 1 ? 's' : ''}{' '}
-          available
+          {hasConflict ? 
+            "Already booked" : 
+            `${timeSlotOption.availableCount} unit${timeSlotOption.availableCount !== 1 ? 's' : ''} available`
+          }
         </div>
       </div>
     );
@@ -191,11 +266,7 @@ class BookingManager {
   }
 
   private formatTime(isoString: string): string {
-    return new Date(isoString).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return moment.utc(isoString).tz('America/Los_Angeles').format('h:mm A');
   }
 
   private showLoading(show: boolean): void {
@@ -206,7 +277,7 @@ class BookingManager {
   private showError(message: string): void {
     this.slotsContainer.innerHTML = '';
     const errorMsg = <p style="color: red;">Error: {message}</p>;
-    this.slotsContainer.appendChild(errorMsg);
+    render(errorMsg, this.slotsContainer);
   }
 }
 
