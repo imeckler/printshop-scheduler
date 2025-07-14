@@ -1,6 +1,9 @@
 -- Additional PostgreSQL-specific features that Drizzle doesn't handle
 -- Run this after your Drizzle migration to add triggers and constraints
 
+-- Enable necessary extensions
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 -- Create the credit balance upkeep function
 CREATE OR REPLACE FUNCTION credit_balance_upkeep()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -33,3 +36,7 @@ ALTER TABLE bookings ADD CONSTRAINT no_overlap_per_unit
 
 ALTER TABLE blackouts ADD CONSTRAINT blackout_no_overlap
     EXCLUDE USING gist (unit_id WITH =, period WITH &&);
+
+-- Add approved and trained columns to users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS trained BOOLEAN NOT NULL DEFAULT false;

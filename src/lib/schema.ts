@@ -11,8 +11,16 @@ import {
   char,
   index,
   check,
+  customType,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
+
+// Custom PostgreSQL tstzrange type
+const tstzrange = customType<{ data: string; notNull: false; default: false }>({
+  dataType() {
+    return 'tstzrange';
+  },
+});
 
 export const users = pgTable(
   'users',
@@ -25,6 +33,9 @@ export const users = pgTable(
     verificationCode: text('verification_code'),
     verificationCodeExpires: timestamp('verification_code_expires', { withTimezone: true }),
     lastVerified: timestamp('last_verified', { withTimezone: true }),
+    approved: boolean('approved').notNull().default(false),
+    trained: boolean('trained').notNull().default(false),
+    applicationReviewer: boolean('application_reviewer').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
@@ -34,6 +45,24 @@ export const users = pgTable(
     ),
   })
 );
+
+export const applications = pgTable('applications', {
+  applicationId: bigserial('application_id', { mode: 'number' }).primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phoneE164: text('phone_e164').notNull(),
+  aboutBathing: text('about_bathing').notNull(),
+  intendedUsage: text('intended_usage').notNull(),
+  reference1Name: text('reference1_name').notNull(),
+  reference1Phone: text('reference1_phone').notNull(),
+  reference2Name: text('reference2_name').notNull(),
+  reference2Phone: text('reference2_phone').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected'
+  reviewedBy: bigint('reviewed_by', { mode: 'number' }).references(() => users.userId),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewNotes: text('review_notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const units = pgTable('units', {
   unitId: serial('unit_id').primaryKey(),
@@ -50,7 +79,7 @@ export const bookings = pgTable('bookings', {
   unitId: integer('unit_id')
     .notNull()
     .references(() => units.unitId, { onDelete: 'cascade' }),
-  slot: text('slot').notNull(), // PostgreSQL tstzrange type
+  slot: tstzrange('slot').notNull(),
   status: text('status').notNull().default('confirmed'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -60,7 +89,7 @@ export const blackouts = pgTable('blackouts', {
   unitId: integer('unit_id')
     .notNull()
     .references(() => units.unitId, { onDelete: 'cascade' }),
-  period: text('period').notNull(), // PostgreSQL tstzrange type
+  period: tstzrange('period').notNull(),
   reason: text('reason'),
 });
 
@@ -82,7 +111,7 @@ export const creditTransactions = pgTable('credit_transactions', {
   currency: char('currency', { length: 3 }).notNull().default('USD'),
   kind: text('kind').notNull(),
   bookingId: bigint('booking_id', { mode: 'number' }).references(() => bookings.bookingId),
-  paymentId: bigint('payment_id', { mode: 'number' }),
+  paymentId: text('payment_id'),
   note: text('note'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -96,20 +125,25 @@ export const creditBalances = pgTable('credit_balances', {
 });
 
 // Indexes
-export const bookingsUserFutureIdx = index('bookings_user_future_idx')
-  .on(bookings.userId, bookings.slot)
-  .where(sql`status = 'confirmed' AND upper(slot) > now()`);
-
-export const creditTxUserIdx = index('credit_tx_user_idx').on(
-  creditTransactions.userId,
-  creditTransactions.createdAt
-);
+// export const bookingsUserIdx = index('bookings_user_idx').on(bookings.userId, bookings.slot);
+// export const creditTxUserIdx = index('credit_tx_user_idx').on(
+//   creditTransactions.userId,
+//   creditTransactions.createdAt
+// );
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   bookings: many(bookings),
   creditTransactions: many(creditTransactions),
   creditBalance: many(creditBalances),
+  reviewedApplications: many(applications),
+}));
+
+export const applicationsRelations = relations(applications, ({ one }) => ({
+  reviewer: one(users, {
+    fields: [applications.reviewedBy],
+    references: [users.userId],
+  }),
 }));
 
 export const unitsRelations = relations(units, ({ many }) => ({

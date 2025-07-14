@@ -1,6 +1,6 @@
 import { eq, and, sql } from 'drizzle-orm';
 import { db } from './db';
-import { units, bookings } from './schema';
+import { units, bookings, blackouts } from './schema';
 import { getConfig } from './config';
 import jwt from 'jsonwebtoken';
 
@@ -12,11 +12,11 @@ export interface BucketRemaining {
 }
 
 /* ---------- prepared statement ---------- */
-const remainingSql = sql/*sql*/ `
+const remainingSql = (winStart: Date, winEnd: Date) => sql/*sql*/ `
 WITH params AS (
   SELECT
-    ${sql.placeholder('winStart')}::timestamptz AS win_start,
-    ${sql.placeholder('winEnd')}  ::timestamptz AS win_end
+    ${winStart}::timestamptz AS win_start,
+    ${winEnd}::timestamptz AS win_end
 ),                /* … copy the full SQL from section 1 … */
 
 /* 1. snap the window to the previous :00 / :30 ------------------------*/
@@ -41,40 +41,35 @@ buckets AS (
       INTERVAL '30 minutes') AS gs
 ),
 
-/* 3. filter out buckets that collide with a blackout -----------------*/
 usable_buckets AS (
   SELECT b.bucket, u.unit_id, u.capacity
   FROM   buckets b
-  CROSS  JOIN units u                     -- every unit × every bucket
+  CROSS  JOIN units u
   LEFT   JOIN blackouts bo
            ON bo.unit_id = u.unit_id
-          AND bo.period && b.bucket       -- blackout overlap?
-  WHERE  bo.blackout_id IS NULL           -- keep only if NOT blacked out
+          AND bo.period && b.bucket
+  WHERE  bo.blackout_id IS NULL
     AND  u.active = TRUE
 ),
-
-/* 4. count bookings per (bucket, unit) -------------------------------*/
-overlaps AS (
+booking_counts AS (
   SELECT
     ub.bucket,
     ub.unit_id,
     COUNT(bk.booking_id) AS overlap_count,
     ub.capacity
   FROM   usable_buckets  ub
-  LEFT   JOIN bookings   bk
+  LEFT   JOIN bookings bk
            ON bk.unit_id = ub.unit_id
-          AND bk.slot   && ub.bucket      -- <-- overlap test
-          AND bk.status  = 'confirmed'
+          AND bk.slot && ub.bucket
+          AND bk.status = 'confirmed'
   GROUP  BY ub.bucket, ub.unit_id, ub.capacity
 )
-
-/* 5. final projection -------------------------------------------------*/
 SELECT
   bucket::text                    AS bucket,
   unit_id,
   capacity        - overlap_count AS remaining_capacity
-FROM overlaps
-WHERE capacity - overlap_count > 0          -- optional: hide full buckets
+FROM booking_counts
+WHERE capacity - overlap_count > 0
 ORDER BY bucket, unit_id;
 `;
 
@@ -85,7 +80,7 @@ export async function remainingCapacityByHalfHour(
   winStart: Date,
   winEnd: Date
 ): Promise<BucketRemaining[]> {
-  const result = await db.execute(sql`${remainingSql}`);
+  const result = await db.execute(remainingSql(winStart, winEnd));
   return result.rows as unknown as BucketRemaining[];
 }
 
@@ -125,6 +120,7 @@ export class SaunaAvailabilityManager {
   }
 
   private calculatePrice(slot: TimeRange, unitId: number): number {
+    return 700;
     const basePrice = 3000; // $30 in cents
     const hour = slot.start.getHours();
     const isPeakHour = hour >= 18 && hour < 21;
@@ -210,11 +206,15 @@ export class SaunaAvailabilityManager {
       throw new Error('Invalid or expired slot signature');
     }
 
+    console.log('booking...');
+
     return await db.transaction(async tx => {
       // Verify unit exists and is active
       const unit = await tx.query.units.findFirst({
         where: and(eq(units.unitId, signedSlot.unitId), eq(units.active, true)),
       });
+
+      console.log(unit);
 
       if (!unit) {
         throw new Error('Unit not found or inactive');
@@ -232,6 +232,7 @@ export class SaunaAvailabilityManager {
       );
 
       if (!availableForUnit || availableForUnit.remaining_capacity <= 0) {
+        console.log('too bad');
         throw new Error('Slot no longer available');
       }
 
@@ -245,6 +246,8 @@ export class SaunaAvailabilityManager {
           status: 'confirmed',
         })
         .returning();
+
+      console.log(booking);
 
       return !!booking;
     });
@@ -263,6 +266,20 @@ export class SaunaAvailabilityManager {
       with: {
         unit: true,
       },
+      orderBy: sql`lower(slot)`,
+    });
+  }
+
+  /**
+   * Get user's bookings that overlap with a specific time range
+   */
+  async getUserBookingsInRange(userId: number, start: Date, stop: Date): Promise<any[]> {
+    return await db.query.bookings.findMany({
+      where: and(
+        eq(bookings.userId, userId),
+        eq(bookings.status, 'confirmed'),
+        sql`slot && tstzrange(${start.toISOString()}, ${stop.toISOString()}, '[)')`
+      ),
       orderBy: sql`lower(slot)`,
     });
   }

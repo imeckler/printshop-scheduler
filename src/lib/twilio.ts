@@ -4,7 +4,7 @@ import { randomInt } from 'crypto';
 import { User } from './dbtypes';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
-import { users } from './schema';
+import { users, applications } from './schema';
 
 const config = getConfig();
 
@@ -16,7 +16,7 @@ class TwilioService {
   private client: twilio.Twilio | null = null;
   private verifySid: string = '';
   private messagingServiceSid: string = '';
-  private isEnabled: boolean = false;
+  private isEnabled: boolean = true;
   private fromPhoneNumber: string = '';
 
   constructor() {
@@ -101,13 +101,13 @@ class TwilioService {
         // Use messaging service if configured, otherwise use from phone number
         if (this.messagingServiceSid) {
           await this.client.messages.create({
-            body: `Your verification code for Shindigo is: ${code}`,
+            body: `Your verification code for ContraBanya is: ${code}`,
             to: phoneNumber,
             messagingServiceSid: this.messagingServiceSid,
           });
         } else {
           await this.client.messages.create({
-            body: `Your verification code for Shindigo is: ${code}`,
+            body: `Your verification code for ContraBanya is: ${code}`,
             to: phoneNumber,
             from: this.fromPhoneNumber,
           });
@@ -201,12 +201,13 @@ class TwilioService {
           .verificationChecks.create({ to: phoneNumber, code });
 
         if (verificationCheck.status === 'approved') {
-          // Create a new verified user record
+          // Create a new verified user record with approved flag set to false initially
           const [userRecord] = await db
             .insert(users)
             .values({
               phoneE164: phoneNumber,
               lastVerified: new Date(),
+              approved: false,
             })
             .returning();
 

@@ -2,6 +2,8 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import { getConfig } from './config';
+import * as schema from './schema';
+import { ensureSeedData } from './seedData';
 import fs from 'fs';
 import path from 'path';
 
@@ -12,13 +14,13 @@ export async function runMigrations() {
     connectionString: config.database.postgresql_url,
   });
 
-  const db = drizzle(pool);
+  const db = drizzle(pool, { schema });
 
   try {
     console.log('Running Drizzle migrations...');
-
-    // Run standard Drizzle migrations (if you have a migrations folder)
-    // await migrate(db, { migrationsFolder: './drizzle' });
+    
+    // Run Drizzle migrations
+    await migrate(db, { migrationsFolder: './drizzle' });
 
     console.log('Running PostgreSQL-specific migrations...');
 
@@ -34,6 +36,10 @@ export async function runMigrations() {
     } else {
       console.log('PostgreSQL-specific migrations already applied');
     }
+
+    console.log('Running seed data...');
+    await ensureSeedData();
+    console.log('Seed data completed');
   } catch (error) {
     console.error('Migration failed:', error);
     throw error;
@@ -41,6 +47,7 @@ export async function runMigrations() {
     await pool.end();
   }
 }
+
 
 async function checkTriggerExists(pool: Pool): Promise<boolean> {
   try {
