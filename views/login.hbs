@@ -1,0 +1,38 @@
+<div class="container">
+    <h2>Login with Phone Number</h2>
+    <p>We'll send you a verification code to complete the login process.</p>
+    
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="_phoneNumber">Phone Number:</label>
+            <input type="tel" class="form-control" id="phoneNumber" name="_phoneNumber" placeholder="Phone number" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Send Verification Code</button>
+    </form>
+    
+    <div id="verificationForm" style="display: none;">
+        <form id="verifyForm">
+            <div class="form-group">
+                <label for="verificationCode">Verification Code:</label>
+                <input type="text" id="verificationCode" name="verificationCode" required placeholder="Enter 6-digit code">
+            </div>
+            <button type="submit" class="btn btn-primary">Verify & Login</button>
+        </form>
+    </div>
+    
+    <div id="message" class="message"></div>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@25.3.1/build/css/intlTelInput.css">
+<script src="https://cdn.jsdelivr.net/npm/intl-tel-input@25.3.1/build/js/intlTelInput.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const input = document.querySelector("#phoneNumber");
+  window.signInTel = window.intlTelInput(input, {
+    countryOrder: ['us'],
+    initialCountry: 'us',
+    loadUtils: () => import("https://cdn.jsdelivr.net/npm/intl-tel-input@25.3.1/build/js/utils.js"),
+  });
+});
+</script>
+<script src="/public/js/login.js"></script>

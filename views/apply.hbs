@@ -1,0 +1,97 @@
+<div class="container">
+    <h2>Membership Application</h2>
+    
+    <div class="application-intro">
+        <p>Thank you for your interest in joining our sauna community. Please fill out the application below completely. All applications are reviewed by our membership committee.</p>
+    </div>
+
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+
+    {{#if success}}
+        <div class="alert alert-success">
+            <h3>Application Submitted Successfully!</h3>
+            <p>Thank you for your application. We'll review it and get back to you within 3-5 business days.</p>
+            <a href="/" class="btn btn-primary">Return to Home</a>
+        </div>
+    {{else}}
+        <form id="applicationForm" class="application-form">
+            <div class="form-section">
+                <h3>Personal Information</h3>
+                
+                <div class="form-group">
+                    <label for="name">Full Name *</label>
+                    <input type="text" id="name" name="name" required maxlength="100">
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email Address *</label>
+                    <input type="email" id="email" name="email" required maxlength="255">
+                </div>
+
+                <div class="form-group">
+                    <label for="phone">Phone Number *</label>
+                    <input type="tel" id="phone" name="phone" required placeholder="+1234567890" pattern="^\+[1-9][0-9]{7,15}$">
+                    <small class="form-text">Please include country code (e.g., +1 for US)</small>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>About Your Interest</h3>
+                
+                <div class="form-group">
+                    <label for="aboutBathing">What do you like about bathing/sauna? *</label>
+                    <textarea id="aboutBathing" name="aboutBathing" required rows="4" maxlength="1000" placeholder="Tell us about your experience with saunas, what draws you to sauna culture, health benefits you're seeking, etc."></textarea>
+                    <small class="form-text">Please share your personal connection to sauna culture and what you hope to gain from membership.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="intendedUsage">What times of day/week do you intend to use the sauna? *</label>
+                    <textarea id="intendedUsage" name="intendedUsage" required rows="3" maxlength="500" placeholder="e.g., Early mornings before work, weekend afternoons, Tuesday/Thursday evenings..."></textarea>
+                    <small class="form-text">This helps us understand usage patterns and ensure adequate availability.</small>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>References</h3>
+                <p class="form-description">Please provide two references who can speak to your character and reliability.</p>
+                
+                <div class="reference-group">
+                    <h4>Reference 1</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="reference1Name">Full Name *</label>
+                            <input type="text" id="reference1Name" name="reference1Name" required maxlength="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="reference1Phone">Phone Number *</label>
+                            <input type="tel" id="reference1Phone" name="reference1Phone" required pattern="^\+[1-9][0-9]{7,15}$">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="reference-group">
+                    <h4>Reference 2</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="reference2Name">Full Name *</label>
+                            <input type="text" id="reference2Name" name="reference2Name" required maxlength="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="reference2Phone">Phone Number *</label>
+                            <input type="tel" id="reference2Phone" name="reference2Phone" required pattern="^\+[1-9][0-9]{7,15}$">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="submitBtn">Submit Application</button>
+                <a href="/" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    {{/if}}
+</div>
+
+<script src="/public/js/apply.js"></script>

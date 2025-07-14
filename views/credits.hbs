@@ -1,0 +1,249 @@
+<div class="container">
+    <h2>My Credits</h2>
+    
+    <div class="btn-group">
+        <a href="/" class="btn">Back to Home</a>
+        <a href="/book" class="btn btn-primary">Book Session</a>
+    </div>
+    
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+    
+    <div class="credit-balance-section">
+        <h3>Current Balance</h3>
+        <div class="balance-display">
+            <span class="balance-amount">${{formatCurrency balance}}</span>
+            <span class="balance-label">Available Credits</span>
+        </div>
+    </div>
+    
+    <div class="add-credits-section">
+        <h3>Add Credits</h3>
+        <div class="add-credits-form">
+            <div class="form-group">
+                <label for="creditAmount">Amount to add to account:</label>
+                <div class="amount-input-group">
+                    <span class="currency-symbol">$</span>
+                    <input type="number" 
+                           id="creditAmount" 
+                           min="20" 
+                           max="500" 
+                           step="1" 
+                           placeholder="20"
+                           class="amount-input">
+                </div>
+                <small class="form-text">Minimum $25, Maximum $500</small>
+            </div>
+            
+            <div class="fee-breakdown" id="feeBreakdown" style="display: none;">
+                <div class="fee-item">
+                    <span>Credit amount:</span>
+                    <span id="creditAmountDisplay">$0.00</span>
+                </div>
+                <div class="fee-item">
+                    <span>Stripe processing fee:</span>
+                    <span id="stripeFeeDisplay">$0.00</span>
+                </div>
+                <div class="fee-item total">
+                    <span>Total charge:</span>
+                    <span id="totalChargeDisplay">$0.00</span>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" id="addCreditsBtn" disabled>
+                Add Credits
+            </button>
+        </div>
+    </div>
+    
+    {{#if transactions}}
+        <div class="transactions-section">
+            <h3>Recent Transactions</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each transactions}}
+                    <tr>
+                        <td data-label="Date">{{formatDate this.createdAt}}</td>
+                        <td data-label="Type">
+                            <span class="transaction-type transaction-{{this.kind}}">
+                                {{this.kind}}
+                            </span>
+                        </td>
+                        <td data-label="Amount" class="amount {{#if (gt this.amountCents 0)}}positive{{else}}negative{{/if}}">
+                            {{#if (gt this.amountCents 0)}}+{{/if}}${{formatCurrency this.amountCents}}
+                        </td>
+                        <td data-label="Description">{{this.note}}</td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+    {{else}}
+        <div class="no-transactions">
+            <p>No transactions yet.</p>
+        </div>
+    {{/if}}
+</div>
+
+<script src="/public/js/credits.js"></script>
+
+<style>
+.credit-balance-section {
+    background: #f8f9fa;
+    padding: 2rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+    text-align: center;
+}
+
+.balance-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.balance-amount {
+    font-size: 3rem;
+    font-weight: bold;
+    color: #28a745;
+}
+
+.balance-label {
+    font-size: 1.1rem;
+    color: #6c757d;
+}
+
+.add-credits-section {
+    margin: 2rem 0;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.add-credits-form {
+    max-width: 400px;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #495057;
+}
+
+.amount-input-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.currency-symbol {
+    position: absolute;
+    left: 12px;
+    color: #6c757d;
+    font-weight: 500;
+    z-index: 2;
+}
+
+.amount-input {
+    width: 100%;
+    padding: 0.75rem 0.75rem 0.75rem 2rem;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.amount-input:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.form-text {
+    color: #6c757d;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+.fee-breakdown {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.fee-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.fee-item:last-child {
+    margin-bottom: 0;
+}
+
+.fee-item.total {
+    border-top: 1px solid #dee2e6;
+    padding-top: 0.5rem;
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.transactions-section {
+    margin: 2rem 0;
+}
+
+.transaction-type {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.transaction-purchase {
+    background: #d4edda;
+    color: #155724;
+}
+
+.transaction-booking {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.transaction-refund {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.amount.positive {
+    color: #28a745;
+}
+
+.amount.negative {
+    color: #dc3545;
+}
+
+.no-transactions {
+    text-align: center;
+    padding: 2rem;
+    color: #6c757d;
+}
+</style>

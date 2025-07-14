@@ -1,0 +1,27 @@
+<div class="container">
+    <h2>Book a Sauna Session (dates and times are local to the Sauna)</h2>
+    
+    <div id="booking-container">
+        <div class="form-group">
+            <label for="bookingDate">Select Date:</label>
+            <input type="date" id="bookingDate" name="bookingDate" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="timeSelect">Preferred Time:</label>
+            <select id="timeSelect" name="timeSelect">
+                <!-- Time options will be populated by JavaScript -->
+            </select>
+        </div>
+        
+        <div id="loading" style="display: none;">
+            Loading available slots...
+        </div>
+        
+        <div id="slotsContainer">
+            <!-- Available slots will be populated here -->
+        </div>
+    </div>
+</div>
+
+<script src="/public/js/booking.js"></script>

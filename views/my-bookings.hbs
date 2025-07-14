@@ -1,0 +1,83 @@
+<div class="container">
+    <h2>My Bookings</h2>
+    
+    <div class="btn-group">
+        <a href="/book" class="btn btn-primary">Book New Session</a>
+        <a href="/" class="btn">Back to Home</a>
+    </div>
+    
+    {{#if bookings}}
+        <div class="bookings-section">
+            <h3>Upcoming Bookings</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date & Time</th>
+                        <th>Duration</th>
+                        <th>Unit</th>
+                        <th>Status</th>
+                        <th>Price</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each bookings}}
+                    <tr>
+                        <td data-label="Date & Time">{{formatDateTime this.startTime}}</td>
+                        <td data-label="Duration">{{this.duration}} min</td>
+                        <td data-label="Unit">{{this.unit.name}}</td>
+                        <td data-label="Status">
+                            <span class="status status-{{this.status}}">{{this.status}}</span>
+                        </td>
+                        <td data-label="Price">${{this.totalPrice}}</td>
+                        <td data-label="Actions">
+                            {{#if (eq this.status "confirmed")}}
+                                <a href="/cancel-booking/{{this.bookingId}}" 
+                                   class="btn btn-sm btn-danger" 
+                                   onclick="return confirm('Are you sure you want to cancel this booking?')">
+                                   Cancel
+                                </a>
+                            {{/if}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+        
+        {{#if pastBookings}}
+            <div class="bookings-section">
+                <h3>Past Bookings</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date & Time</th>
+                            <th>Duration</th>
+                            <th>Unit</th>
+                            <th>Status</th>
+                            <th>Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each pastBookings}}
+                        <tr>
+                            <td data-label="Date & Time">{{formatDateTime this.startTime}}</td>
+                            <td data-label="Duration">{{this.duration}} min</td>
+                            <td data-label="Unit">{{this.unit.name}}</td>
+                            <td data-label="Status">
+                                <span class="status status-{{this.status}}">{{this.status}}</span>
+                            </td>
+                            <td data-label="Price">${{this.totalPrice}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        {{/if}}
+    {{else}}
+        <div class="no-bookings">
+            <p>You don't have any bookings yet.</p>
+            <a href="/book" class="btn btn-primary">Book Your First Session</a>
+        </div>
+    {{/if}}
+</div>

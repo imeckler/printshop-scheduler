@@ -1,0 +1,39 @@
+<div class="container">
+    <h2>Application Status</h2>
+    
+    <div class="status-card">
+        {{#if (eq application.status 'pending')}}
+            <div class="alert alert-info">
+                <h3>Application Under Review</h3>
+                <p>Your membership application is currently being reviewed by our team.</p>
+                <p><strong>Submitted:</strong> {{formatDate application.submittedAt}}</p>
+                <p>We typically review applications within 3-5 business days. You'll receive an update once a decision has been made.</p>
+            </div>
+        {{else if (eq application.status 'approved')}}
+            <div class="alert alert-success">
+                <h3>Application Approved!</h3>
+                <p>Congratulations! Your membership application has been approved.</p>
+                <p><strong>Approved:</strong> {{formatDate application.reviewedAt}}</p>
+                {{#if application.reviewNotes}}
+                    <p><strong>Notes:</strong> {{application.reviewNotes}}</p>
+                {{/if}}
+                <p>You now have access to book sauna sessions and use all member features.</p>
+                <a href="/book" class="btn btn-primary">Book a Session</a>
+            </div>
+        {{else if (eq application.status 'rejected')}}
+            <div class="alert alert-danger">
+                <h3>Application Not Approved</h3>
+                <p>Unfortunately, your membership application was not approved at this time.</p>
+                <p><strong>Reviewed:</strong> {{formatDate application.reviewedAt}}</p>
+                {{#if application.reviewNotes}}
+                    <p><strong>Feedback:</strong> {{application.reviewNotes}}</p>
+                {{/if}}
+                <p>You may submit a new application in the future if your circumstances change.</p>
+            </div>
+        {{/if}}
+    </div>
+    
+    <div class="actions">
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+    </div>
+</div>

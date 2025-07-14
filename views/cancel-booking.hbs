@@ -1,0 +1,52 @@
+<div class="container">
+    <h2>Cancel Booking</h2>
+    
+    {{#if booking}}
+        <div class="booking-details">
+            <h3>Booking Details</h3>
+            <table>
+                <tr>
+                    <td><strong>Date & Time:</strong></td>
+                    <td>{{formatDateTime booking.startTime}}</td>
+                </tr>
+                <tr>
+                    <td><strong>Duration:</strong></td>
+                    <td>{{booking.duration}} minutes</td>
+                </tr>
+                <tr>
+                    <td><strong>Unit:</strong></td>
+                    <td>{{booking.unit.name}}</td>
+                </tr>
+                <tr>
+                    <td><strong>Price:</strong></td>
+                    <td>${{booking.totalPrice}}</td>
+                </tr>
+                <tr>
+                    <td><strong>Status:</strong></td>
+                    <td><span class="status status-{{booking.status}}">{{booking.status}}</span></td>
+                </tr>
+            </table>
+        </div>
+        
+        {{#if (eq booking.status "confirmed")}}
+            <div class="cancel-section">
+                <p class="warning">Are you sure you want to cancel this booking? This action cannot be undone.</p>
+                
+                <form method="POST" action="/cancel-booking/{{booking.bookingId}}">
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-danger">Yes, Cancel Booking</button>
+                        <a href="/my-bookings" class="btn">No, Keep Booking</a>
+                    </div>
+                </form>
+            </div>
+        {{else}}
+            <p>This booking cannot be cancelled as it is {{booking.status}}.</p>
+            <a href="/my-bookings" class="btn">Back to My Bookings</a>
+        {{/if}}
+    {{else}}
+        <div class="error">
+            <p>Booking not found or you don't have permission to cancel this booking.</p>
+            <a href="/my-bookings" class="btn">Back to My Bookings</a>
+        </div>
+    {{/if}}
+</div>

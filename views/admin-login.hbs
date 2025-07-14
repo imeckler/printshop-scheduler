@@ -1,0 +1,25 @@
+<div class="container">
+    <div class="admin-login-form">
+        <h2>Admin Login</h2>
+        
+        {{#if error}}
+            <div class="alert alert-danger">{{error}}</div>
+        {{/if}}
+        
+        {{#if success}}
+            <div class="alert alert-success">Login successful!</div>
+        {{/if}}
+        
+        <form method="POST" action="/admin/login">
+            <div class="form-group">
+                <label for="password">Admin Password:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Login</button>
+                <a href="/" class="btn btn-secondary">Back to Home</a>
+            </div>
+        </form>
+    </div>
+</div>

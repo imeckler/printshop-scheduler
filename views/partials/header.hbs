@@ -1,0 +1,18 @@
+<header class="site-header">
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/">Sauna Booking</a>
+        </div>
+        <div class="nav-menu">
+            {{#if user}}
+                <a href="/book" class="nav-link">Book</a>
+                <a href="/my-bookings" class="nav-link">My Bookings</a>
+                <form method="POST" action="/logout" style="display: inline;">
+                    <button type="submit" class="nav-link btn-link">Logout</button>
+                </form>
+            {{else}}
+                <a href="/login" class="nav-link">Login</a>
+            {{/if}}
+        </div>
+    </nav>
+</header>

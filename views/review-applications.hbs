@@ -1,0 +1,98 @@
+<div class="container">
+    <h2>Review Applications</h2>
+    
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+    
+    <div class="review-section">
+        <h3>Pending Applications ({{pendingApplications.length}})</h3>
+        
+        {{#if pendingApplications.length}}
+            {{#each pendingApplications}}
+                <div class="application-card" data-id="{{applicationId}}">
+                    <div class="application-header">
+                        <h4>{{name}}</h4>
+                        <span class="application-date">Submitted: {{formatDate createdAt}}</span>
+                    </div>
+                    
+                    <div class="application-details">
+                        <div class="detail-group">
+                            <strong>Contact Info:</strong>
+                            <p>Email: {{email}}</p>
+                            <p>Phone: {{phoneE164}}</p>
+                        </div>
+                        
+                        <div class="detail-group">
+                            <strong>About Bathing/Sauna:</strong>
+                            <p>{{aboutBathing}}</p>
+                        </div>
+                        
+                        <div class="detail-group">
+                            <strong>Intended Usage:</strong>
+                            <p>{{intendedUsage}}</p>
+                        </div>
+                        
+                        <div class="detail-group">
+                            <strong>References:</strong>
+                            <p>1. {{reference1Name}} - {{reference1Phone}}</p>
+                            <p>2. {{reference2Name}} - {{reference2Phone}}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="application-actions">
+                        <form class="review-form" data-application-id="{{applicationId}}">
+                            <div class="form-group">
+                                <label for="reviewNotes-{{applicationId}}">Review Notes (optional):</label>
+                                <textarea 
+                                    id="reviewNotes-{{applicationId}}" 
+                                    name="reviewNotes" 
+                                    rows="3" 
+                                    maxlength="1000"
+                                    placeholder="Add any notes about your decision..."></textarea>
+                            </div>
+                            <div class="button-group">
+                                <button type="button" class="btn btn-primary approve-btn" data-action="approve">
+                                    Approve
+                                </button>
+                                <button type="button" class="btn btn-danger reject-btn" data-action="reject">
+                                    Reject
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            {{/each}}
+        {{else}}
+            <p class="no-applications">No pending applications at this time.</p>
+        {{/if}}
+    </div>
+    
+    <div class="review-section">
+        <h3>Recently Reviewed Applications</h3>
+        
+        {{#if recentReviewed.length}}
+            <div class="reviewed-applications">
+                {{#each recentReviewed}}
+                    <div class="reviewed-card status-{{status}}">
+                        <div class="reviewed-header">
+                            <span class="applicant-name">{{name}}</span>
+                            <span class="review-status status-{{status}}">{{status}}</span>
+                        </div>
+                        <div class="reviewed-details">
+                            <p>Email: {{email}}</p>
+                            <p>Reviewed: {{formatDate reviewedAt}}</p>
+                            {{#if reviewNotes}}
+                                <p><strong>Notes:</strong> {{reviewNotes}}</p>
+                            {{/if}}
+                        </div>
+                    </div>
+                {{/each}}
+            </div>
+        {{else}}
+            <p class="no-applications">No recently reviewed applications.</p>
+        {{/if}}
+    </div>
+</div>
+
+<script src="/public/js/review-applications.js"></script>

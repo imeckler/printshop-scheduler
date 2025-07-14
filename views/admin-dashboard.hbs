@@ -1,0 +1,105 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Admin Dashboard</h2>
+        <form method="POST" action="/admin/logout" style="display: inline;">
+            <button type="submit" class="btn btn-secondary">Logout</button>
+        </form>
+    </div>
+    
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+    
+    <div class="dashboard-stats">
+        <div class="stat-card">
+            <h3>{{stats.totalUsers}}</h3>
+            <p>Total Users</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{stats.pendingApps}}</h3>
+            <p>Pending Applications</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{stats.approvedApps}}</h3>
+            <p>Approved Applications</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{stats.rejectedApps}}</h3>
+            <p>Rejected Applications</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{stats.totalBookings}}</h3>
+            <p>Total Bookings</p>
+        </div>
+    </div>
+    
+    <div class="admin-actions">
+        <a href="/review-applications" class="btn btn-primary">Review Applications</a>
+        <a href="/admin/users" class="btn btn-secondary">Manage Users</a>
+        <a href="/admin/bookings" class="btn btn-secondary">View Bookings</a>
+    </div>
+    
+    <div class="admin-section">
+        <h3>Recent Applications</h3>
+        {{#if recentApplications.length}}
+            <div class="recent-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Submitted</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each recentApplications}}
+                        <tr>
+                            <td>{{name}}</td>
+                            <td>{{email}}</td>
+                            <td><span class="status-badge status-{{status}}">{{status}}</span></td>
+                            <td>{{formatDate createdAt}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <p class="no-data">No recent applications.</p>
+        {{/if}}
+    </div>
+    
+    <div class="admin-section">
+        <h3>Recent Users</h3>
+        {{#if recentUsers.length}}
+            <div class="recent-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phone</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Approved</th>
+                            <th>Trained</th>
+                            <th>Joined</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each recentUsers}}
+                        <tr>
+                            <td>{{phoneE164}}</td>
+                            <td>{{name}}</td>
+                            <td>{{email}}</td>
+                            <td>{{#if approved}}✅{{else}}❌{{/if}}</td>
+                            <td>{{#if trained}}✅{{else}}❌{{/if}}</td>
+                            <td>{{formatDate createdAt}}</td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <p class="no-data">No recent users.</p>
+        {{/if}}
+    </div>
+</div>
