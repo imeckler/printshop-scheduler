@@ -48,7 +48,6 @@ class ApplicationManager {
         name: formData.get('name'),
         email: formData.get('email'),
         phone: formData.get('phone'),
-        aboutBathing: formData.get('aboutBathing'),
         intendedUsage: formData.get('intendedUsage'),
         reference1Name: formData.get('reference1Name'),
         reference1Phone: formData.get('reference1Phone'),

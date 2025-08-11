@@ -11,9 +11,9 @@ import { initializeDatabase } from './lib/db';
 import twilioService from './lib/twilio';
 import { generateAdminToken, verifyAdminToken, generatePhoneVerificationToken, getVerifiedUserIdFromRequest } from './lib/tokenService';
 import { User } from './lib/dbtypes';
-import { SaunaAvailabilityManager } from './lib/availability';
+import { AvailabilityManager } from './lib/availability';
 import { db } from './lib/db';
-import { bookings, users, creditBalances, creditTransactions, creditPackages, applications } from './lib/schema';
+import { bookings, users, creditBalances, creditTransactions, creditPackages, applications, units } from './lib/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { getConfig } from './lib/config';
@@ -67,6 +67,7 @@ handlebars.registerHelper('formatCurrency', function(cents: number) {
 });
 
 handlebars.registerHelper('formatDate', function(date: Date) {
+  console.log('eyo', date);
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -74,6 +75,31 @@ handlebars.registerHelper('formatDate', function(date: Date) {
   });
 });
 
+handlebars.registerHelper('formatSlot', function(slotRange: string) {
+  // Parse slot range like '["2025-07-25 21:30:00+00","2025-07-25 22:00:00+00")'
+  const match = slotRange.match(/^\["([^"]+)","([^"]+)"\)$/);
+  if (!match) return slotRange; // Return original if parsing fails
+  
+  const startDate = new Date(match[1]);
+  const endDate = new Date(match[2]);
+  
+  const startFormatted = startDate.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+  
+  const endFormatted = endDate.toLocaleString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+  
+  return `${startFormatted} - ${endFormatted}`;
+});
 handlebars.registerHelper('formatDateTime', function(date: Date) {
   return new Date(date).toLocaleString('en-US', {
     year: 'numeric',
@@ -107,7 +133,7 @@ server.register(view, {
 });
 
 // Initialize availability manager
-const availabilityManager = new SaunaAvailabilityManager();
+const availabilityManager = new AvailabilityManager();
 
 // shared auth function
 function requirePermissions(perms: Array<{ [K in keyof User]: User[K] extends boolean ? K : never }[keyof User]>) {
@@ -155,12 +181,15 @@ server.get('/', async (request, reply) => {
       return reply.redirect('/login');
     }
     
-    console.log(user);
     // If user is approved, show normal homepage
+    const bookings = await availabilityManager.getUserBookings(userId);
+    const now = new Date();
+    const upcomingBookings = bookings.filter(booking => new Date(booking.slot.split(',')[1].slice(0, -1)) > now);
+    console.log(upcomingBookings);
     if (user.approved) {
       return reply.view('home', {
         user: { id: userId, name: user.name },
-        upcomingBookings: []
+        upcomingBookings,
       });
     }
     
@@ -305,6 +334,59 @@ server.get('/admin/dashboard', async (request, reply) => {
 server.post('/admin/logout', async (request, reply) => {
   reply.clearCookie('admin_session');
   return reply.redirect('/admin');
+});
+
+// Admin users management page
+server.get('/admin/users', async (request, reply) => {
+  // Check if admin is logged in
+  const adminToken = request.cookies.admin_session;
+  if (!adminToken || !verifyAdminToken(adminToken)) {
+    return reply.redirect('/admin?error=Please+log+in+as+admin');
+  }
+
+  try {
+    const allUsers = await db.query.users.findMany({
+      orderBy: desc(users.createdAt)
+    });
+
+    const { success, error } = request.query as { success?: string; error?: string };
+    
+    return reply.view('admin-users', {
+      users: allUsers,
+      success,
+      error
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return reply.redirect('/admin?error=Failed+to+load+users');
+  }
+});
+
+// Update user permissions
+server.post('/admin/users/:userId/update', async (request, reply) => {
+  // Check if admin is logged in
+  const adminToken = request.cookies.admin_session;
+  if (!adminToken || !verifyAdminToken(adminToken)) {
+    return reply.redirect('/admin?error=Please+log+in+as+admin');
+  }
+
+  try {
+    const { userId } = request.params as { userId: string };
+    const { approved, trained } = request.body as { approved?: string; trained?: string };
+
+    await db
+      .update(users)
+      .set({
+        approved: approved === 'on',
+        trained: trained === 'on'
+      })
+      .where(eq(users.userId, parseInt(userId)));
+
+    return reply.redirect('/admin/users?success=User+updated+successfully');
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return reply.redirect('/admin/users?error=Failed+to+update+user');
+  }
 });
 
 server.get('/review-applications', { preHandler: requirePermissions(['applicationReviewer']) }, async (request, reply) => {
@@ -727,13 +809,114 @@ server.post(
   }
 );
 
+// Units endpoint to get all active units
+server.get(
+  '/api/units',
+  {
+    preHandler: requirePermissions(['approved', 'trained'])
+  },
+  async (request, reply) => {
+    try {
+      const activeUnits = await db.query.units.findMany({
+        where: eq(units.active, true),
+        orderBy: units.name
+      });
+
+      return {
+        success: true,
+        data: activeUnits
+      };
+    } catch (error) {
+      console.error('Error fetching units:', error);
+      reply.code(500);
+      return { error: 'Failed to fetch units' };
+    }
+  }
+);
+
+// Booking density endpoint
+server.get(
+  '/api/booking-density',
+  {
+    schema: {
+      querystring: Type.Object({
+        unitId: Type.Number(),
+        start: Type.String(),
+        end: Type.String()
+      })
+    },
+    preHandler: requirePermissions(['approved', 'trained'])
+  },
+  async (request, reply) => {
+    try {
+      const { unitId, start, end } = request.query;
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+
+      const densityData = await availabilityManager.getBookingDensity(unitId, startDate, endDate);
+
+      return densityData;
+    } catch (error) {
+      console.error('Error fetching booking density:', error);
+      reply.code(500);
+      return { error: 'Failed to fetch booking density' };
+    }
+  }
+);
+
+// Book custom time range endpoint
+server.post(
+  '/api/book-custom-range',
+  {
+    schema: {
+      body: Type.Object({
+        unitId: Type.Number(),
+        start: Type.String(),
+        end: Type.String()
+      })
+    },
+    preHandler: requirePermissions(['approved', 'trained'])
+  },
+  async (request, reply) => {
+    try {
+      const { unitId, start, end } = request.body;
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      const userId = request.user!.userId;
+
+      console.log('boooook', 
+                  startDate, endDate);
+      const success = await availabilityManager.bookCustomTimeRange(userId, startDate, endDate, unitId);
+
+      if (success) {
+        return {
+          success: true,
+          message: 'Custom time range booked successfully'
+        };
+      } else {
+        reply.code(400);
+        return { error: 'Failed to book custom time range' };
+      }
+    } catch (error) {
+      console.error('Error booking custom range:', error);
+      
+      if (error instanceof Error) {
+        reply.code(400);
+        return { error: error.message };
+      }
+
+      reply.code(500);
+      return { error: 'Failed to book custom time range' };
+    }
+  }
+);
+
 // Application submission schema
 const SubmitApplicationSchema = {
   body: Type.Object({
     name: Type.String({ minLength: 1, maxLength: 100 }),
     email: Type.String({ format: 'email', maxLength: 255 }),
     phone: Type.String({ pattern: '^\\+[1-9][0-9]{7,15}$' }),
-    aboutBathing: Type.String({ minLength: 1, maxLength: 1000 }),
     intendedUsage: Type.String({ minLength: 1, maxLength: 500 }),
     reference1Name: Type.String({ minLength: 1, maxLength: 100 }),
     reference1Phone: Type.String({ pattern: '^\\+[1-9][0-9]{7,15}$' }),
@@ -765,7 +948,6 @@ server.post(
         name,
         email,
         phone,
-        aboutBathing,
         intendedUsage,
         reference1Name,
         reference1Phone,
@@ -788,7 +970,6 @@ server.post(
         name,
         email,
         phoneE164: phone,
-        aboutBathing,
         intendedUsage,
         reference1Name,
         reference1Phone,
@@ -1085,7 +1266,7 @@ async function start() {
     await initializeDatabase();
 
     // Start the server
-    await server.listen({ port: 8080 });
+    await server.listen({ host: '0.0.0.0', port: 8080 });
     console.log(`Server listening at http://localhost:8080`);
   } catch (err) {
     console.error('Failed to start server:', err);

@@ -2,10 +2,10 @@
 domain = "localhost:8080"
 port = "8080"
 email = "admin@example.com"
-site_name = "Sauna Booking System"
+site_name = "Printshop Booking System"
 
 [database]
-postgresql_url = "postgresql://autobana_user:autobana_password@localhost:5432/autobana"
+postgresql_url = "postgresql://printshop_user:printshop_password@localhost:5432/printshop"
 
 [jwt]
 secret = "your-super-secret-jwt-key-change-this-in-production"

@@ -51,7 +51,6 @@ export const applications = pgTable('applications', {
   name: text('name').notNull(),
   email: text('email').notNull(),
   phoneE164: text('phone_e164').notNull(),
-  aboutBathing: text('about_bathing').notNull(),
   intendedUsage: text('intended_usage').notNull(),
   reference1Name: text('reference1_name').notNull(),
   reference1Phone: text('reference1_phone').notNull(),

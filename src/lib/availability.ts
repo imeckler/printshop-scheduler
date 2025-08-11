@@ -100,7 +100,19 @@ export interface SignedAvailability {
   data: AvailableSlot[];
 }
 
-export class SaunaAvailabilityManager {
+export interface BookingDensityInterval {
+  startTime: Date;
+  endTime: Date;
+  bookedCount: number;
+}
+
+export interface BookingDensityResponse {
+  intervals: BookingDensityInterval[];
+  totalCapacity: number;
+  requestedRange: TimeRange;
+}
+
+export class AvailabilityManager {
   private config = getConfig();
 
   private parseTstzRange(rangeStr: string): TimeRange {
@@ -120,7 +132,7 @@ export class SaunaAvailabilityManager {
   }
 
   private calculatePrice(slot: TimeRange, unitId: number): number {
-    return 700;
+    return 0;
     const basePrice = 3000; // $30 in cents
     const hour = slot.start.getHours();
     const isPeakHour = hour >= 18 && hour < 21;
@@ -257,6 +269,17 @@ export class SaunaAvailabilityManager {
    * Get user's upcoming bookings
    */
   async getUserBookings(userId: number): Promise<any[]> {
+    const test = await db.query.bookings.findMany({
+      where: and(
+        eq(bookings.userId, userId),
+        eq(bookings.status, 'confirmed'),
+      ),
+      with: {
+        unit: true,
+      },
+      orderBy: sql`lower(slot)`,
+    });
+    console.log('f', test);
     return await db.query.bookings.findMany({
       where: and(
         eq(bookings.userId, userId),
@@ -281,6 +304,111 @@ export class SaunaAvailabilityManager {
         sql`slot && tstzrange(${start.toISOString()}, ${stop.toISOString()}, '[)')`
       ),
       orderBy: sql`lower(slot)`,
+    });
+  }
+
+  async getBookingDensity(unitId: number, start: Date, end: Date): Promise<BookingDensityResponse> {
+    const overlappingBookings: Array<{slot: string}> = await db.query.bookings.findMany({
+      where: and(
+        eq(bookings.unitId, unitId),
+        eq(bookings.status, 'confirmed'),
+        sql`slot && tstzrange(${start.toISOString()}, ${end.toISOString()}, '[)')`
+      ),
+      orderBy: sql`lower(slot)`,
+    });
+
+    const unit = await db.query.units.findFirst({
+      where: and(eq(units.unitId, unitId), eq(units.active, true)),
+    });
+    if (!unit) {
+      throw new Error('Unit not found or inactive');
+    }
+
+    const slots = overlappingBookings.map((b) => this.parseTstzRange(b.slot));
+    console.log('overlapping bookings', overlappingBookings);
+    console.log('overlapping slots', slots);
+    console.log('me start', start);
+    const numBookingsAtStart = slots.reduce(((acc, b) => b.start <= start ? acc + 1 : acc), 0);
+    console.log('at astart', numBookingsAtStart);
+
+    const changePoints: Map<number, {starts: number, ends: number}> = new Map();
+    slots.forEach((s) => {
+      if (start < s.start && s.start <= end) {
+        const t = s.start.getTime();
+        const r = changePoints.get(t);
+        if (r != undefined) {
+          r.starts += 1;
+        } else {
+          changePoints.set(t, { starts: 1, ends: 0 });
+        }
+      }
+
+      if (s.end < end && s.end >= start) {
+        const t = s.end.getTime();
+        const r = changePoints.get(t);
+        if (r != undefined) {
+          r.ends += 1;
+        } else {
+          changePoints.set(t, { starts: 0, ends: 1 });
+        }
+      }
+    });
+
+    const changes = Array.from(changePoints.entries());
+    changes.sort((c1, c2) => c1[0] - c2[0]);
+
+    const intervals: Array<BookingDensityInterval> = [];
+
+    let numBookings = numBookingsAtStart;
+
+    for (let i = 0; i < changes.length + 1; ++i) {
+      const startTime = i == 0 ? start : new Date(changes[i - 1][0]);
+      const endTime = i == changes.length ? end : new Date(changes[i][0]);
+
+      intervals.push({
+        startTime,
+        endTime,
+        bookedCount: numBookings,
+      });
+
+      if (i < changes.length) {
+        const [_, { starts, ends }] = changes[i];
+        numBookings += starts;
+        numBookings -= ends;
+      }
+    }
+
+    return { intervals, totalCapacity: unit.capacity, requestedRange: { start, end } };
+  }
+
+  /**
+   * Book a custom time range
+   */
+  async bookCustomTimeRange(userId: number, start: Date, end: Date, unitId: number): Promise<boolean> {
+    return await db.transaction(async tx => {
+      // Verify unit exists and is active
+      const unit = await tx.query.units.findFirst({
+        where: and(eq(units.unitId, unitId), eq(units.active, true)),
+      });
+
+      if (!unit) {
+        throw new Error('Unit not found or inactive');
+      }
+
+      console.log('sloot',
+          this.timeRangeToTstzRange({ start, end }));
+      // Create the booking with custom time range
+      const [booking] = await tx
+        .insert(bookings)
+        .values({
+          userId,
+          unitId: unitId,
+          slot: this.timeRangeToTstzRange({ start, end }),
+          status: 'confirmed',
+        })
+        .returning();
+
+      return !!booking;
     });
   }
 

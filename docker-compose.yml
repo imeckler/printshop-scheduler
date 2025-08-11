@@ -2,16 +2,16 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: autobana
-      POSTGRES_USER: autobana_user
-      POSTGRES_PASSWORD: autobana_password
+      POSTGRES_DB: printshop
+      POSTGRES_USER: printshop_user
+      POSTGRES_PASSWORD: printshop_password
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autobana_user -d autobana"]
+      test: ["CMD-SHELL", "pg_isready -U printshop_user -d printshop"]
       interval: 5s
       timeout: 5s
       retries: 5

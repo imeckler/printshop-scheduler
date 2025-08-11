@@ -2,127 +2,132 @@
 /** @jsxFrag Fragment */
 import { jsx, Fragment } from 'hono/jsx/dom';
 import { render } from 'hono/jsx/dom';
-import { getAvailableSlots, bookSlot, isSuccessResponse } from './apiClient';
-import { AvailableSlot } from '../lib/apiTypes';
-import * as moment from 'moment-timezone';
+import { isSuccessResponse } from './apiClient';
+import moment from 'moment-timezone';
+import { BookCustomRangeRequest, BookingDensityResponse,
+  BookingDensityRequest } from '../lib/apiTypes';
 
-interface TimeSlotOption {
-  timeRange: string;
-  slot: AvailableSlot;
-  availableCount: number;
+
+interface Unit {
+  unitId: number;
+  name: string;
+  capacity: number;
+  active: boolean;
+}
+
+interface TimeSlot {
+  time: Date;
+  label: string;
+  bookedCount: number;
+  totalCapacity: number;
 }
 
 class BookingManager {
   private dateInput: HTMLInputElement;
-  private timeSelect: HTMLSelectElement;
-  private slotsContainer: HTMLElement;
+  private unitSelect: HTMLSelectElement;
+  private calendarContainer: HTMLElement;
+  private dayCalendar: HTMLElement;
   private loadingDiv: HTMLElement;
-  private userBookings: any[] = [];
+  private selectedRangeDisplay: HTMLElement;
+  private confirmButton: HTMLButtonElement;
+  private clearButton: HTMLButtonElement;
+  
+  private units: Unit[] = [];
+  private timeSlots: TimeSlot[] = [];
+  private selectedStartIndex: number | null = null;
+  private selectedEndIndex: number | null = null;
+  private isDragging: boolean = false;
 
   constructor() {
     this.dateInput = document.getElementById('bookingDate') as HTMLInputElement;
-    this.timeSelect = document.getElementById('timeSelect') as HTMLSelectElement;
-    this.slotsContainer = document.getElementById('slotsContainer') as HTMLElement;
+    this.unitSelect = document.getElementById('unitSelect') as HTMLSelectElement;
+    this.calendarContainer = document.getElementById('calendar-container') as HTMLElement;
+    this.dayCalendar = document.getElementById('day-calendar') as HTMLElement;
     this.loadingDiv = document.getElementById('loading') as HTMLElement;
+    this.selectedRangeDisplay = document.getElementById('selected-range-display') as HTMLElement;
+    this.confirmButton = document.getElementById('confirm-booking') as HTMLButtonElement;
+    this.clearButton = document.getElementById('clear-selection') as HTMLButtonElement;
 
     // Set today's date as default in LA timezone
     const todayLA = moment.tz('America/Los_Angeles');
     this.dateInput.value = todayLA.format('YYYY-MM-DD');
 
     this.setupEventListeners();
-    this.populateTimeOptions();
-    this.loadAvailableSlots();
+    this.loadUnits();
   }
 
   private setupEventListeners(): void {
-    this.dateInput.addEventListener('change', this.loadAvailableSlots.bind(this));
-    this.timeSelect.addEventListener('change', this.loadAvailableSlots.bind(this));
+    this.dateInput.addEventListener('change', this.loadCalendar.bind(this));
+    this.unitSelect.addEventListener('change', this.loadCalendar.bind(this));
+    this.confirmButton.addEventListener('click', this.confirmBooking.bind(this));
+    this.clearButton.addEventListener('click', this.clearSelection.bind(this));
   }
 
-  private populateTimeOptions(): void {
-    const allDayOption = <option value="all-day">All day</option>;
-    render(allDayOption, this.timeSelect);
-
-    for (let hour = 6; hour <= 22; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        const displayTime = new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true,
-        });
-
-        const option = <option value={timeString}>{displayTime}</option>;
-        const tempContainer = document.createElement('div');
-        render(option, tempContainer);
-        if (tempContainer.firstElementChild) {
-          this.timeSelect.appendChild(tempContainer.firstElementChild);
+  private async loadUnits(): Promise<void> {
+    try {
+      const response = await fetch('/api/units');
+      if (response.ok) {
+        const result = await response.json();
+        this.units = result.data || [];
+        this.populateUnitOptions();
+        if (this.units.length > 0) {
+          this.loadCalendar();
         }
       }
+    } catch (error) {
+      console.error('Error loading units:', error);
     }
   }
 
-  private getTimeRange(): { start: Date; end: Date } {
+  private populateUnitOptions(): void {
+    this.unitSelect.innerHTML = '';
+    this.units.forEach(unit => {
+      const option = <option value={unit.unitId.toString()}>{unit.name} (Capacity: {unit.capacity})</option>;
+      const tempContainer = document.createElement('div');
+      render(option, tempContainer);
+      if (tempContainer.firstElementChild) {
+        this.unitSelect.appendChild(tempContainer.firstElementChild);
+      }
+    });
+  }
+
+  private getSelectedUnit(): Unit | null {
+    const selectedUnitId = parseInt(this.unitSelect.value);
+    return this.units.find(u => u.unitId === selectedUnitId) || null;
+  }
+
+  private getDayRange(): { start: Date; end: Date } {
     const selectedDateStr = this.dateInput.value;
-    const selectedTime = this.timeSelect.value;
-    const nowLA = moment.tz('America/Los_Angeles');
-    const todayLA = nowLA.clone().startOf('day');
     const selectedDateLA = moment.tz(selectedDateStr, 'America/Los_Angeles');
+    
+    const startDateLA = selectedDateLA.clone().hour(0).minute(0).second(0); // Start at 6 AM
+    const endDateLA = selectedDateLA.clone().hour(23).minute(0).second(0);   // End at 11 PM
 
-    if (selectedTime === 'all-day') {
-      let startDateLA = selectedDateLA.clone().startOf('day');
-      
-      // If selected date is today, start from current LA time, otherwise start from midnight
-      if (selectedDateLA.isSame(todayLA, 'day')) {
-        startDateLA = nowLA.clone();
-      }
-
-      const endDateLA = selectedDateLA.clone().endOf('day');
-
-      // Convert LA times to UTC for server
-      return { 
-        start: startDateLA.utc().toDate(), 
-        end: endDateLA.utc().toDate() 
-      };
-    } else {
-      const [hour, minute] = selectedTime.split(':').map(Number);
-
-      const startDateLA = selectedDateLA.clone().hour(hour - 1).minute(minute).second(0);
-      const endDateLA = selectedDateLA.clone().hour(hour + 2).minute(minute).second(0);
-
-      // If selected date is today and the start time is in the past, start from now
-      if (selectedDateLA.isSame(todayLA, 'day') && startDateLA.isBefore(nowLA)) {
-        startDateLA.set(nowLA.toObject());
-      }
-
-      // Convert LA times to UTC for server
-      return { 
-        start: startDateLA.utc().toDate(), 
-        end: endDateLA.utc().toDate() 
-      };
-    }
+    return { 
+      start: startDateLA.utc().toDate(), 
+      end: endDateLA.utc().toDate() 
+    };
   }
 
-  private async loadAvailableSlots(): Promise<void> {
-    this.showLoading(true);
+  private async loadCalendar(): Promise<void> {
+    const selectedUnit = this.getSelectedUnit();
+    if (!selectedUnit) return;
 
-    const { start, end } = this.getTimeRange();
-    console.log(start, end);
+    this.showLoading(true);
+    this.clearSelection();
+
+    const { start, end } = this.getDayRange();
 
     try {
-      // Load available slots and user bookings in parallel
-      const [slotsResult, bookingsResult] = await Promise.all([
-        getAvailableSlots({
-          start: start.toISOString(),
-          stop: end.toISOString(),
-        }),
-        this.loadUserBookingsInRange(start, end)
-      ]);
-
-      if (isSuccessResponse(slotsResult)) {
-        this.renderTimeSlots(slotsResult.data);
+      const response = await fetch(`/api/booking-density?unitId=${selectedUnit.unitId}&start=${start.toISOString()}&end=${end.toISOString()}`);
+      
+      if (response.ok) {
+        const densityData: BookingDensityResponse = await response.json();
+        this.generateTimeSlots(densityData, selectedUnit);
+        this.renderCalendar();
+        this.calendarContainer.style.display = 'block';
       } else {
-        this.showError(slotsResult.error);
+        this.showError('Failed to load calendar data');
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('401')) {
@@ -135,126 +140,231 @@ class BookingManager {
     }
   }
 
-  private async loadUserBookingsInRange(start: Date, end: Date): Promise<void> {
-    try {
-      const response = await fetch(`/user-bookings-in-range?start=${start.toISOString()}&stop=${end.toISOString()}`);
-      if (response.ok) {
-        const result = await response.json();
-        this.userBookings = result.data || [];
-      } else {
-        this.userBookings = [];
-      }
-    } catch (error) {
-      console.error('Error loading user bookings:', error);
-      this.userBookings = [];
-    }
-  }
+  private generateTimeSlots(densityData: BookingDensityResponse, unit: Unit): void {
+    this.timeSlots = [];
+    // const { start, end } = this.getDayRange();
 
-  private hasBookingConflict(slot: AvailableSlot): boolean {
-    const slotStart = moment.utc(slot.slot.start);
-    const slotEnd = moment.utc(slot.slot.end);
+    const selectedDateStr = this.dateInput.value;
+    const selectedDateLA = moment.tz(selectedDateStr, 'America/Los_Angeles');
+    const start = selectedDateLA.clone().hour(0).minute(0).second(0); // Start at 6 AM
+    const end = selectedDateLA.clone().hour(23).minute(59).second(0); // Start at 6 AM
 
-    return this.userBookings.some(booking => {
-      if (booking.status !== 'confirmed') return false;
-      
-      // Parse booking slot range like "[2025-01-01 10:00:00+00,2025-01-01 10:30:00+00)"
-      const match = booking.slot.match(/\[([^,]+),([^)]+)\)/);
-      if (!match) return false;
-      
-      const bookingStart = moment.utc(match[1]);
-      const bookingEnd = moment.utc(match[2]);
-      
-      // Check if slots overlap
-      return slotStart.isBefore(bookingEnd) && slotEnd.isAfter(bookingStart);
-    });
-  }
+    // Generate 15-minute time slots
+    // const endMoment = moment.tz(end, 'America/Los_Angeles');
+    const current = start.clone();
+    while (current.isBefore(end)) {
+      const slotStart = current.clone();
+      const slotEnd = slotStart.clone().add(15, 'minutes');
 
-  private renderTimeSlots(slots: AvailableSlot[]): void {
-    this.slotsContainer.innerHTML = '';
+      const startDate = slotStart.toDate();
+      const endDate = slotEnd.toDate();
+      // [       ]
+      //      [        ]
+      // const bookedCount = densityData.intervals.find((x) => endDate >= new Date(x.startTime))?.bookedCount || 0;
 
-    if (slots.length === 0) {
-      const noSlotsMsg = <p>No available slots for the selected time range.</p>;
-      render(noSlotsMsg, this.slotsContainer);
-      return;
-    }
-
-    const timeSlotOptions = this.processTimeSlots(slots);
-
-    const flexContainer = (
-      <div className="time-slots-flex">
-        {timeSlotOptions.map(timeSlotOption => this.TimeSlotCard({ timeSlotOption }))}
-      </div>
-    );
-
-    render(flexContainer, this.slotsContainer);
-  }
-
-  private TimeSlotCard({ timeSlotOption }: { timeSlotOption: TimeSlotOption }) {
-    const hasConflict = this.hasBookingConflict(timeSlotOption.slot);
-    const cardClass = hasConflict ? "time-slot-card conflicted" : "time-slot-card";
-    
-    return (
-      <div 
-        className={cardClass} 
-        onClick={hasConflict ? undefined : () => this.bookSlot(timeSlotOption.slot)}
-        style={hasConflict ? { cursor: 'not-allowed' } : undefined}
-      >
-        <div className="time-slot-time">{timeSlotOption.timeRange}</div>
-        <div className="time-slot-price">${(timeSlotOption.slot.price / 100).toFixed(2)}</div>
-        <div className="time-slot-availability">
-          {hasConflict ? 
-            "Already booked" : 
-            `${timeSlotOption.availableCount} unit${timeSlotOption.availableCount !== 1 ? 's' : ''} available`
-          }
-        </div>
-      </div>
-    );
-  }
-
-  private processTimeSlots(slots: AvailableSlot[]): TimeSlotOption[] {
-    const slotsByTime = new Map<string, AvailableSlot[]>();
-
-    slots.forEach(slot => {
-      const timeKey = this.formatTime(slot.slot.start) + ' - ' + this.formatTime(slot.slot.end);
-      if (!slotsByTime.has(timeKey)) {
-        slotsByTime.set(timeKey, []);
-      }
-      slotsByTime.get(timeKey)!.push(slot);
-    });
-
-    const timeSlotOptions: TimeSlotOption[] = [];
-
-    slotsByTime.forEach((unitsForTime, timeRange) => {
-      unitsForTime.sort((a, b) => a.unitId - b.unitId);
-      const selectedSlot = unitsForTime[0];
-
-      timeSlotOptions.push({
-        timeRange,
-        slot: selectedSlot,
-        availableCount: unitsForTime.length,
+      this.timeSlots.push({
+        time: slotStart.toDate(),
+        label: slotStart.format('h:mm A'),
+        bookedCount: 0,
+        totalCapacity: unit.capacity,
       });
+
+      current.add(15, 'minutes');
+    }
+    const startEpoch = start.toDate().getTime();
+    densityData.intervals.forEach((x) => {
+      const FIFTEEN_MINUTES = 15 * 60 * 1000;
+      const startIndex = Math.floor(((new Date(x.startTime)).getTime() - startEpoch) / FIFTEEN_MINUTES);
+      const endIndex = Math.ceil(((new Date(x.endTime)).getTime() - startEpoch) / FIFTEEN_MINUTES);
+      for (let i = startIndex; i < Math.min(endIndex + 1, this.timeSlots.length); ++i) {
+        this.timeSlots[i].bookedCount = x.bookedCount;
+      }
     });
-
-    timeSlotOptions.sort(
-      (a, b) => new Date(a.slot.slot.start).getTime() - new Date(b.slot.slot.start).getTime()
-    );
-
-    return timeSlotOptions;
+    
+    /*
+    while (current.isBefore(endMoment)) {
+      const slotStart = current.clone();
+      const slotEnd = current.clone().add(15, 'minutes');
+      
+      // Find the booking density for this time slot
+      let bookedCount = 0;
+      for (const interval of densityData.intervals) {
+        const intervalStart = moment.utc(interval.startTime);
+        const intervalEnd = moment.utc(interval.endTime);
+        
+        // Check if our 15-minute slot overlaps with this density interval
+        if (slotStart.utc().isBefore(intervalEnd) && slotEnd.utc().isAfter(intervalStart)) {
+          bookedCount = interval.bookedCount;
+          break;
+        }
+      }
+      
+      this.timeSlots.push({
+        time: slotStart.toDate(),
+        label: slotStart.format('h:mm A'),
+        bookedCount,
+        totalCapacity: unit.capacity
+      });
+      
+      current.add(15, 'minutes');
+    }
+    */
   }
 
-  public async bookSlot(slot: AvailableSlot): Promise<void> {
-    if (!confirm(`Book this slot for $${(slot.price / 100).toFixed(2)}?`)) {
+  private renderCalendar(): void {
+    this.dayCalendar.innerHTML = '';
+    
+    this.timeSlots.forEach((slot, index) => {
+      const timeSlotElement = this.createTimeSlotElement(slot, index);
+      this.dayCalendar.appendChild(timeSlotElement);
+    });
+  }
+  
+  private createTimeSlotElement(slot: TimeSlot, index: number): HTMLElement {
+    const slotElement = document.createElement('div');
+    slotElement.className = 'time-slot';
+    slotElement.dataset.index = index.toString();
+    
+    // Time label
+    const timeLabel = document.createElement('div');
+    timeLabel.className = 'time-label';
+    timeLabel.textContent = slot.label;
+    
+    // Density bar
+    const densityBar = document.createElement('div');
+    densityBar.className = 'density-bar';
+    
+    const densityIndicator = document.createElement('div');
+    densityIndicator.className = 'density-indicator';
+    
+    const utilizationPercent = slot.totalCapacity > 0 ? Math.round((slot.bookedCount / slot.totalCapacity) * 100) : 0;
+    let densityClass = 'density-0';
+    if (utilizationPercent >= 75) densityClass = 'density-100';
+    else if (utilizationPercent >= 50) densityClass = 'density-75';
+    else if (utilizationPercent >= 25) densityClass = 'density-50';
+    else if (utilizationPercent > 0) densityClass = 'density-25';
+    
+    densityIndicator.classList.add(densityClass);
+    densityIndicator.style.width = `${Math.max(utilizationPercent, 10)}%`;
+    
+    const densityText = document.createElement('span');
+    densityText.className = 'density-text';
+    densityText.textContent = `${slot.bookedCount}/${slot.totalCapacity} booked`;
+    
+    densityBar.appendChild(densityIndicator);
+    densityBar.appendChild(densityText);
+    
+    slotElement.appendChild(timeLabel);
+    slotElement.appendChild(densityBar);
+    
+    // Add event listeners for drag selection
+    slotElement.addEventListener('mousedown', (e) => this.startSelection(e, index));
+    slotElement.addEventListener('mouseenter', (e) => this.updateSelection(e, index));
+    slotElement.addEventListener('mouseup', (e) => this.endSelection(e, index));
+    
+    return slotElement;
+  }
+
+  private startSelection(event: MouseEvent, index: number): void {
+    event.preventDefault();
+    this.isDragging = true;
+    this.selectedStartIndex = index;
+    this.selectedEndIndex = index;
+    this.updateSelectionDisplay();
+    
+    // Add global mouse up listener
+    document.addEventListener('mouseup', this.globalMouseUp.bind(this), { once: true });
+  }
+  
+  private updateSelection(event: MouseEvent, index: number): void {
+    if (!this.isDragging || this.selectedStartIndex === null) return;
+    
+    this.selectedEndIndex = index;
+    this.updateSelectionDisplay();
+  }
+  
+  private endSelection(event: MouseEvent, index: number): void {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+  }
+  
+  private globalMouseUp(): void {
+    this.isDragging = false;
+  }
+
+  private updateSelectionDisplay(): void {
+    // Clear all selection classes
+    this.dayCalendar.querySelectorAll('.time-slot').forEach(slot => {
+      slot.classList.remove('selected', 'selecting');
+    });
+    
+    if (this.selectedStartIndex === null || this.selectedEndIndex === null) {
+      this.selectedRangeDisplay.textContent = '';
+      this.confirmButton.disabled = true;
       return;
     }
+    
+    const startIndex = Math.min(this.selectedStartIndex, this.selectedEndIndex);
+    const endIndex = Math.max(this.selectedStartIndex, this.selectedEndIndex);
+    
+    // Highlight selected range
+    for (let i = startIndex; i <= endIndex; i++) {
+      const slotElement = this.dayCalendar.querySelector(`[data-index="${i}"]`);
+      if (slotElement) {
+        slotElement.classList.add(this.isDragging ? 'selecting' : 'selected');
+      }
+    }
+    
+    // Update display text
+    const startTime = this.timeSlots[startIndex];
+    const endTime = this.timeSlots[endIndex];
+    if (startTime && endTime) {
+      const startLabel = startTime.label;
+      const endMoment = moment(endTime.time).add(15, 'minutes');
+      const endLabel = endMoment.format('h:mm A');
+      this.selectedRangeDisplay.textContent = `Selected: ${startLabel} - ${endLabel}`;
+      this.confirmButton.disabled = false;
+    }
+  }
 
+  private clearSelection(): void {
+    this.selectedStartIndex = null;
+    this.selectedEndIndex = null;
+    this.isDragging = false;
+    this.updateSelectionDisplay();
+  }
+  
+  private async confirmBooking(): Promise<void> {
+    if (this.selectedStartIndex === null || this.selectedEndIndex === null) return;
+    
+    const selectedUnit = this.getSelectedUnit();
+    if (!selectedUnit) return;
+    
+    const startIndex = Math.min(this.selectedStartIndex, this.selectedEndIndex);
+    const endIndex = Math.max(this.selectedStartIndex, this.selectedEndIndex);
+    
+    const startTime = this.timeSlots[startIndex].time;
+    const endTime = moment(this.timeSlots[endIndex].time).add(15, 'minutes').toDate();
+    
     try {
-      const result = await bookSlot(slot);
-
-      if (isSuccessResponse(result)) {
+      const response = await fetch('/api/book-custom-range', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          unitId: selectedUnit.unitId,
+          start: startTime.toISOString(),
+          end: endTime.toISOString()
+        })
+      });
+      
+      if (response.ok) {
         alert('Booking successful! Redirecting to home page...');
         window.location.href = '/';
       } else {
-        alert('Booking failed: ' + result.error);
+        const result = await response.json();
+        alert('Booking failed: ' + (result.error || 'Unknown error'));
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('401')) {
@@ -265,19 +375,15 @@ class BookingManager {
     }
   }
 
-  private formatTime(isoString: string): string {
-    return moment.utc(isoString).tz('America/Los_Angeles').format('h:mm A');
-  }
-
   private showLoading(show: boolean): void {
     this.loadingDiv.style.display = show ? 'block' : 'none';
-    this.slotsContainer.style.display = show ? 'none' : 'block';
+    this.calendarContainer.style.display = show ? 'none' : 'block';
   }
 
   private showError(message: string): void {
-    this.slotsContainer.innerHTML = '';
+    this.calendarContainer.innerHTML = '';
     const errorMsg = <p style="color: red;">Error: {message}</p>;
-    render(errorMsg, this.slotsContainer);
+    render(errorMsg, this.calendarContainer);
   }
 }
 
