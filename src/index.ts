@@ -32,7 +32,7 @@ server.setErrorHandler((error, request, reply) => {
     });
     return;
   }
-  
+
   console.error('Server error:', error);
   reply.status(500).send({ error: 'Internal server error' });
 });
@@ -62,11 +62,11 @@ server.register(staticFiles, {
 });
 
 // Register Handlebars helpers
-handlebars.registerHelper('formatCurrency', function(cents: number) {
+handlebars.registerHelper('formatCurrency', function (cents: number) {
   return (cents / 100).toFixed(2);
 });
 
-handlebars.registerHelper('formatDate', function(date: Date) {
+handlebars.registerHelper('formatDate', function (date: Date) {
   console.log('eyo', date);
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -75,14 +75,14 @@ handlebars.registerHelper('formatDate', function(date: Date) {
   });
 });
 
-handlebars.registerHelper('formatSlot', function(slotRange: string) {
+handlebars.registerHelper('formatSlot', function (slotRange: string) {
   // Parse slot range like '["2025-07-25 21:30:00+00","2025-07-25 22:00:00+00")'
   const match = slotRange.match(/^\["([^"]+)","([^"]+)"\)$/);
   if (!match) return slotRange; // Return original if parsing fails
-  
+
   const startDate = new Date(match[1]);
   const endDate = new Date(match[2]);
-  
+
   const startFormatted = startDate.toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -91,16 +91,16 @@ handlebars.registerHelper('formatSlot', function(slotRange: string) {
     minute: '2-digit',
     hour12: true
   });
-  
+
   const endFormatted = endDate.toLocaleString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
   });
-  
+
   return `${startFormatted} - ${endFormatted}`;
 });
-handlebars.registerHelper('formatDateTime', function(date: Date) {
+handlebars.registerHelper('formatDateTime', function (date: Date) {
   return new Date(date).toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -111,15 +111,15 @@ handlebars.registerHelper('formatDateTime', function(date: Date) {
   });
 });
 
-handlebars.registerHelper('eq', function(a: any, b: any) {
+handlebars.registerHelper('eq', function (a: any, b: any) {
   return a === b;
 });
 
-handlebars.registerHelper('gt', function(a: number, b: number) {
+handlebars.registerHelper('gt', function (a: number, b: number) {
   return a > b;
 });
 
-handlebars.registerHelper('subtract', function(a: number, b: number) {
+handlebars.registerHelper('subtract', function (a: number, b: number) {
   return a - b;
 });
 
@@ -160,7 +160,7 @@ function requirePermissions(perms: Array<{ [K in keyof User]: User[K] extends bo
 // Initialize config and Stripe
 const config = getConfig();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2025-05-28.basil',
+  apiVersion: '2025-07-30.basil',
 });
 
 server.get('/ping', async (request, reply) => {
@@ -169,18 +169,18 @@ server.get('/ping', async (request, reply) => {
 
 server.get('/', async (request, reply) => {
   const userId = getVerifiedUserIdFromRequest(request);
-  
+
   if (userId) {
     // Get user details to check approval status
     const user = await db.query.users.findFirst({
       where: eq(users.userId, userId)
     });
-    
+
     if (!user) {
       reply.clearCookie('phone_verification');
       return reply.redirect('/login');
     }
-    
+
     // If user is approved, show normal homepage
     const bookings = await availabilityManager.getUserBookings(userId);
     const now = new Date();
@@ -192,12 +192,12 @@ server.get('/', async (request, reply) => {
         upcomingBookings,
       });
     }
-    
+
     // If user is not approved, check their application status
     const application = await db.query.applications.findFirst({
       where: eq(applications.phoneE164, user.phoneE164)
     });
-    
+
     if (!application) {
       // No application submitted - redirect to application form
       return reply.redirect('/apply');
@@ -220,17 +220,17 @@ server.get('/', async (request, reply) => {
 
 server.get('/login', async (request, reply) => {
   const userId = getVerifiedUserIdFromRequest(request);
-  
+
   if (userId) {
     return reply.redirect('/');
   }
-  
+
   return reply.view('login', {});
 });
 
 server.get('/apply', async (request, reply) => {
   const { success } = request.query as { success?: string };
-  
+
   return reply.view('apply', {
     success: success === 'true'
   });
@@ -238,13 +238,13 @@ server.get('/apply', async (request, reply) => {
 
 server.get('/admin', async (request, reply) => {
   const { success, error } = request.query as { success?: string; error?: string };
-  
+
   // Check if admin is already logged in
   const adminToken = request.cookies.admin_session;
   if (adminToken && verifyAdminToken(adminToken)) {
     return reply.redirect('/admin/dashboard');
   }
-  
+
   return reply.view('admin-login', {
     success: success === 'true',
     error: error === 'invalid' ? 'Invalid password' : undefined
@@ -253,7 +253,7 @@ server.get('/admin', async (request, reply) => {
 
 server.post('/admin/login', async (request, reply) => {
   const { password } = request.body as { password: string };
-  
+
   const cookieOpts: CookieSerializeOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -268,7 +268,7 @@ server.post('/admin/login', async (request, reply) => {
     console.log('yo nice');
     // Set admin session cookie
     const adminToken = generateAdminToken();
-    
+
     reply.setCookie('admin_session', adminToken, cookieOpts);
 
     console.log('redirecting');
@@ -281,11 +281,11 @@ server.post('/admin/login', async (request, reply) => {
 server.get('/admin/dashboard', async (request, reply) => {
   // Check admin authentication
   const adminToken = request.cookies.admin_session;
-  
+
   if (!adminToken || !verifyAdminToken(adminToken)) {
     return reply.redirect('/admin');
   }
-  
+
   try {
     // Get system statistics
     const stats = await Promise.all([
@@ -295,20 +295,20 @@ server.get('/admin/dashboard', async (request, reply) => {
       db.query.applications.findMany({ where: eq(applications.status, 'rejected') }).then(apps => apps.length),
       db.query.bookings.findMany().then(bookings => bookings.length),
     ]);
-    
+
     const [totalUsers, pendingApps, approvedApps, rejectedApps, totalBookings] = stats;
-    
+
     // Get recent activity
     const recentApplications = await db.query.applications.findMany({
       orderBy: desc(applications.createdAt),
       limit: 10
     });
-    
+
     const recentUsers = await db.query.users.findMany({
       orderBy: desc(users.createdAt),
       limit: 10
     });
-    
+
     return reply.view('admin-dashboard', {
       stats: {
         totalUsers,
@@ -350,7 +350,7 @@ server.get('/admin/users', async (request, reply) => {
     });
 
     const { success, error } = request.query as { success?: string; error?: string };
-    
+
     return reply.view('admin-users', {
       users: allUsers,
       success,
@@ -395,7 +395,7 @@ server.get('/review-applications', { preHandler: requirePermissions(['applicatio
       where: eq(applications.status, 'pending'),
       orderBy: applications.createdAt
     });
-    
+
     const recentReviewed = await db.query.applications.findMany({
       where: sql`status IN ('approved', 'rejected')`,
       orderBy: desc(applications.reviewedAt),
@@ -409,7 +409,7 @@ server.get('/review-applications', { preHandler: requirePermissions(['applicatio
         }
       }
     });
-    
+
     return reply.view('review-applications', {
       user: { id: request.user!.userId, name: request.user!.name },
       pendingApplications,
@@ -428,7 +428,7 @@ server.get('/review-applications', { preHandler: requirePermissions(['applicatio
 
 server.get('/book', { preHandler: requirePermissions(['approved', 'trained']) }, async (request, reply) => {
   return reply.view('booking', {
-    user: { id: request.user!.userId, name: request.user!.name}
+    user: { id: request.user!.userId, name: request.user!.name }
   });
 });
 
@@ -443,7 +443,7 @@ server.get('/my-bookings', { preHandler: requirePermissions(['approved']) }, asy
     const pastBookings = bookings.filter(booking => new Date(booking.slot.split(',')[1].slice(0, -1)) <= now);
 
     return reply.view('my-bookings', {
-      user: { id: userId, name: request.user!.name},
+      user: { id: userId, name: request.user!.name },
       bookings: upcomingBookings,
       pastBookings: pastBookings
     });
@@ -466,14 +466,14 @@ server.get('/credits', { preHandler: requirePermissions(['approved']) }, async (
     const balance = await db.query.creditBalances.findFirst({
       where: eq(creditBalances.userId, userId)
     });
-    
+
     // Get recent credit transactions
     const transactions = await db.query.creditTransactions.findMany({
       where: eq(creditTransactions.userId, userId),
       orderBy: desc(creditTransactions.createdAt),
       limit: 20
     });
-    
+
     return reply.view('credits', {
       user: { id: userId, name: request.user!.name },
       balance: balance?.balanceCents || 0,
@@ -492,7 +492,7 @@ server.get('/credits', { preHandler: requirePermissions(['approved']) }, async (
 
 server.get('/cancel-booking/:id', { preHandler: requirePermissions(['approved', 'trained']) }, async (request, reply) => {
   const userId = request.user!.userId;
-  
+
   const { id } = request.params as { id: string };
 
   const booking = await db.query.bookings.findFirst({
@@ -509,14 +509,14 @@ server.post('/cancel-booking/:id', { preHandler: requirePermissions(['approved',
   const userId = request.user!.userId;
   const { id } = request.params as { id: string };
   const bookingId = parseInt(id, 10);
-  
+
   if (isNaN(bookingId)) {
     return reply.redirect('/my-bookings');
   }
-  
+
   try {
     const success = await availabilityManager.cancelBooking(bookingId, userId);
-    
+
     if (success) {
       return reply.redirect('/my-bookings?cancelled=true');
     } else {
@@ -727,7 +727,7 @@ server.get(
 
       // Validate date range
       if (startDate >= stopDate) {
-        reply.code(400);
+        reply.code(500);
         return { error: 'Start date must be before stop date' };
       }
 
@@ -735,7 +735,7 @@ server.get(
       const maxDays = 30;
       const daysDiff = (stopDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
       if (daysDiff > maxDays) {
-        reply.code(400);
+        reply.code(500);
         return { error: `Date range cannot exceed ${maxDays} days` };
       }
 
@@ -884,8 +884,8 @@ server.post(
       const endDate = new Date(end);
       const userId = request.user!.userId;
 
-      console.log('boooook', 
-                  startDate, endDate);
+      console.log('boooook',
+        startDate, endDate);
       const success = await availabilityManager.bookCustomTimeRange(userId, startDate, endDate, unitId);
 
       if (success) {
@@ -899,7 +899,7 @@ server.post(
       }
     } catch (error) {
       console.error('Error booking custom range:', error);
-      
+
       if (error instanceof Error) {
         reply.code(400);
         return { error: error.message };
@@ -916,7 +916,6 @@ const SubmitApplicationSchema = {
   body: Type.Object({
     name: Type.String({ minLength: 1, maxLength: 100 }),
     email: Type.String({ format: 'email', maxLength: 255 }),
-    phone: Type.String({ pattern: '^\\+[1-9][0-9]{7,15}$' }),
     intendedUsage: Type.String({ minLength: 1, maxLength: 500 }),
     reference1Name: Type.String({ minLength: 1, maxLength: 100 }),
     reference1Phone: Type.String({ pattern: '^\\+[1-9][0-9]{7,15}$' }),
@@ -941,19 +940,26 @@ server.post(
   '/submit-application',
   {
     schema: SubmitApplicationSchema,
+    preHandler: requirePermissions([]),
   },
   async (request, reply) => {
     try {
       const {
         name,
         email,
-        phone,
         intendedUsage,
         reference1Name,
         reference1Phone,
         reference2Name,
         reference2Phone,
       } = request.body;
+
+      if (!request.user) {
+        reply.code(500);
+        return { error: 'User not logged in' };
+      }
+
+      const phone = request.user.phoneE164;
 
       // Check if application already exists for this phone/email
       const existingApplication = await db.query.applications.findFirst({
@@ -1128,9 +1134,9 @@ server.get(
       const { start, stop } = request.query;
       const startDate = new Date(start);
       const stopDate = new Date(stop);
-      
+
       const bookings = await availabilityManager.getUserBookingsInRange(userId, startDate, stopDate);
-      
+
       return {
         success: true,
         data: bookings.map(booking => ({

@@ -25,29 +25,22 @@
                         <td data-label="Unit">{{this.unit.name}}</td>
                         <td data-label="Status">{{this.status}}</td>
                         <td data-label="Actions">
-                            <a href="/cancel-booking/{{this.bookingId}}" class="btn" onclick="return confirm('Are you sure you want to cancel this booking?')">Cancel</a>
+                          <a href="/cancel-booking/{{this.bookingId}}" 
+                              class="btn btn-sm btn-danger" 
+                              onclick="return confirm('Are you sure you want to cancel this booking?')">
+                              Cancel
+                          </a>
                         </td>
                     </tr>
                     {{/each}}
                 </tbody>
             </table>
         {{else}}
-            <p>You don't have any upcoming bookings. <a href="/book">Book your first sauna session!</a></p>
+            <p>You don't have any upcoming bookings.</p>
         {{/if}}
     {{else}}
-        <h2>Relax and Unwind</h2>
-        <p>Welcome to our premium sauna booking system. Enjoy a peaceful and rejuvenating experience in our state-of-the-art sauna facilities.</p>
-        
-        <h3>Features:</h3>
-        <ul>
-            <li>Multiple sauna units with different capacities</li>
-            <li>Easy online booking system</li>
-            <li>Flexible scheduling</li>
-            <li>Secure phone number verification</li>
-        </ul>
-        
         <div class="btn-group">
-            <a href="/login" class="btn btn-primary">Login to Book</a>
+            <a href="/login" class="btn btn-primary">Login to Book a slot at the printshop</a>
         </div>
     {{/if}}
 </div>

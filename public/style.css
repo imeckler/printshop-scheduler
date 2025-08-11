@@ -165,6 +165,7 @@ th {
         padding-bottom: 0.5rem;
     }
     
+    /*
     td:before {
         content: attr(data-label) ": ";
         position: absolute;
@@ -174,6 +175,7 @@ th {
         white-space: nowrap;
         font-weight: bold;
     }
+    */
 }
 
 /* Time slots flex layout */

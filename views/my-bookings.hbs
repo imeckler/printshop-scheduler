@@ -21,23 +21,19 @@
                     </tr>
                 </thead>
                 <tbody>
+
                     {{#each bookings}}
+
                     <tr>
-                        <td data-label="Date & Time">{{formatDateTime this.startTime}}</td>
-                        <td data-label="Duration">{{this.duration}} min</td>
+                        <td data-label="Date & Time">{{formatSlot this.slot}}</td>
                         <td data-label="Unit">{{this.unit.name}}</td>
-                        <td data-label="Status">
-                            <span class="status status-{{this.status}}">{{this.status}}</span>
-                        </td>
-                        <td data-label="Price">${{this.totalPrice}}</td>
+                        <td data-label="Status">{{this.status}}</td>
                         <td data-label="Actions">
-                            {{#if (eq this.status "confirmed")}}
                                 <a href="/cancel-booking/{{this.bookingId}}" 
                                    class="btn btn-sm btn-danger" 
                                    onclick="return confirm('Are you sure you want to cancel this booking?')">
                                    Cancel
                                 </a>
-                            {{/if}}
                         </td>
                     </tr>
                     {{/each}}

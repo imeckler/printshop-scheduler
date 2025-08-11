@@ -7,23 +7,11 @@
             <table>
                 <tr>
                     <td><strong>Date & Time:</strong></td>
-                    <td>{{formatDateTime booking.startTime}}</td>
-                </tr>
-                <tr>
-                    <td><strong>Duration:</strong></td>
-                    <td>{{booking.duration}} minutes</td>
+                    <td>{{formatSlot booking.slot}}</td>
                 </tr>
                 <tr>
                     <td><strong>Unit:</strong></td>
                     <td>{{booking.unit.name}}</td>
-                </tr>
-                <tr>
-                    <td><strong>Price:</strong></td>
-                    <td>${{booking.totalPrice}}</td>
-                </tr>
-                <tr>
-                    <td><strong>Status:</strong></td>
-                    <td><span class="status status-{{booking.status}}">{{booking.status}}</span></td>
                 </tr>
             </table>
         </div>
