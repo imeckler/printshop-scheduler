@@ -2,7 +2,7 @@
     <h2>Membership Application</h2>
     
     <div class="application-intro">
-        <p>Thank you for your interest in joining our sauna community. Please fill out the application below completely. All applications are reviewed by our membership committee.</p>
+        <p>Thank you for your interest in joining our printshop. Please fill out the application below completely. All applications are reviewed by our membership committee.</p>
     </div>
 
     {{#if error}}
@@ -12,7 +12,7 @@
     {{#if success}}
         <div class="alert alert-success">
             <h3>Application Submitted Successfully!</h3>
-            <p>Thank you for your application. We'll review it and get back to you within 3-5 business days.</p>
+            <p>Thank you for your application. We'll review it and get back to you as soon as we can.</p>
             <a href="/" class="btn btn-primary">Return to Home</a>
         </div>
     {{else}}
@@ -41,15 +41,9 @@
                 <h3>About Your Interest</h3>
                 
                 <div class="form-group">
-                    <label for="aboutBathing">What do you like about bathing/sauna? *</label>
-                    <textarea id="aboutBathing" name="aboutBathing" required rows="4" maxlength="1000" placeholder="Tell us about your experience with saunas, what draws you to sauna culture, health benefits you're seeking, etc."></textarea>
-                    <small class="form-text">Please share your personal connection to sauna culture and what you hope to gain from membership.</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="intendedUsage">What times of day/week do you intend to use the sauna? *</label>
-                    <textarea id="intendedUsage" name="intendedUsage" required rows="3" maxlength="500" placeholder="e.g., Early mornings before work, weekend afternoons, Tuesday/Thursday evenings..."></textarea>
-                    <small class="form-text">This helps us understand usage patterns and ensure adequate availability.</small>
+                    <label for="intendedUsage">What sort of thing are you intending to print?</label>
+                    <textarea id="intendedUsage" name="intendedUsage" required rows="3" maxlength="1000" placeholder="e.g., Early mornings before work, weekend afternoons, Tuesday/Thursday evenings..."></textarea>
+                    <small class="form-text"></small>
                 </div>
             </div>
 

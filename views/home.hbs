@@ -3,7 +3,7 @@
         <h2>Welcome back, {{user.name}}!</h2>
         
         <div class="btn-group">
-            <a href="/book" class="btn btn-primary">Book a Sauna Slot</a>
+            <a href="/book" class="btn btn-primary">Book a Slot</a>
             <a href="/my-bookings" class="btn">View My Bookings</a>
         </div>
         
@@ -21,7 +21,7 @@
                 <tbody>
                     {{#each upcomingBookings}}
                     <tr>
-                        <td data-label="Date & Time">{{formatDate this.slot}}</td>
+                        <td data-label="Date & Time">{{formatSlot this.slot}}</td>
                         <td data-label="Unit">{{this.unit.name}}</td>
                         <td data-label="Status">{{this.status}}</td>
                         <td data-label="Actions">

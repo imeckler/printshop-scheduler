@@ -1,0 +1,295 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Manage Users</h2>
+        <div>
+            <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            <form method="POST" action="/admin/logout" style="display: inline;">
+                <button type="submit" class="btn btn-secondary">Logout</button>
+            </form>
+        </div>
+    </div>
+    
+    {{#if success}}
+        <div class="alert alert-success">{{success}}</div>
+    {{/if}}
+    
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+    
+    {{#if users.length}}
+        <div class="users-table">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Phone</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Approved</th>
+                        <th>Trained</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each users}}
+                    <tr>
+                        <td>{{userId}}</td>
+                        <td>{{phoneE164}}</td>
+                        <td>{{name}}</td>
+                        <td>{{email}}</td>
+                        <td>
+                            <span class="status-badge {{#if approved}}approved{{else}}pending{{/if}}">
+                                {{#if approved}}✅ Yes{{else}}❌ No{{/if}}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status-badge {{#if trained}}approved{{else}}pending{{/if}}">
+                                {{#if trained}}✅ Yes{{else}}❌ No{{/if}}
+                            </span>
+                        </td>
+                        <td>{{formatDate createdAt}}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', {{approved}}, {{trained}})">
+                                Edit
+                            </button>
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+    {{else}}
+        <p class="no-data">No users found.</p>
+    {{/if}}
+</div>
+
+<!-- Edit User Modal -->
+<div id="editModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Edit User Permissions</h3>
+            <span class="close" onclick="closeEditModal()">&times;</span>
+        </div>
+        <form id="editForm" method="POST">
+            <div class="modal-body">
+                <p><strong>User:</strong> <span id="modalUserName"></span></p>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="modalApproved" name="approved">
+                        Approved (can access the system)
+                    </label>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="modalTrained" name="trained">
+                        Trained (can make bookings)
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+
+.admin-header div {
+    display: flex;
+    gap: 1rem;
+}
+
+.users-table {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th,
+.table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+}
+
+.table tr:hover {
+    background-color: #f8f9fa;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-badge.approved {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-badge.pending {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.btn-sm {
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+.alert {
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f1b0b7;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: white;
+    margin: 10% auto;
+    padding: 0;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+.modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.close {
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #aaa;
+}
+
+.close:hover {
+    color: #000;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.no-data {
+    text-align: center;
+    padding: 2rem;
+    color: #6c757d;
+}
+</style>
+
+<script>
+function openEditModal(userId, userName, approved, trained) {
+    document.getElementById('modalUserName').textContent = userName;
+    document.getElementById('modalApproved').checked = approved;
+    document.getElementById('modalTrained').checked = trained;
+    document.getElementById('editForm').action = `/admin/users/${userId}/update`;
+    document.getElementById('editModal').style.display = 'block';
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+// Close modal when clicking outside of it
+window.onclick = function(event) {
+    const modal = document.getElementById('editModal');
+    if (event.target === modal) {
+        closeEditModal();
+    }
+}
+</script>
