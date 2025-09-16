@@ -18,6 +18,46 @@
         </div>
     </div>
     
+    <div class="pricing-section">
+        <h3>Pricing</h3>
+        <div class="pricing-grid">
+            <div class="pricing-item">
+                <span class="pricing-label">Copy Price:</span>
+                <span class="pricing-value">${{formatCurrency pricing.copyPriceCents}} per copy</span>
+            </div>
+            <div class="pricing-item">
+                <span class="pricing-label">Stencil Price:</span>
+                <span class="pricing-value">${{formatCurrency pricing.stencilPriceCents}} per stencil</span>
+            </div>
+        </div>
+    </div>
+
+    {{#if recentUsage}}
+        <div class="usage-section">
+            <h3>Recent Usage</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Copies</th>
+                        <th>Stencils</th>
+                        <th>Charge</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each recentUsage}}
+                    <tr>
+                        <td data-label="Date">{{formatDateTime this.timestamp}}</td>
+                        <td data-label="Copies">{{this.copiesPrinted}}</td>
+                        <td data-label="Stencils">{{this.stencilsCreated}}</td>
+                        <td data-label="Charge" class="amount negative">-${{formatCurrency this.chargeCents}}</td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+    {{/if}}
+
     <div class="add-credits-section">
         <h3>Add Credits</h3>
         <div class="add-credits-form">
@@ -233,6 +273,11 @@
     color: #0c5460;
 }
 
+.transaction-usage_charge {
+    background: #f8d7da;
+    color: #721c24;
+}
+
 .amount.positive {
     color: #28a745;
 }
@@ -245,5 +290,48 @@
     text-align: center;
     padding: 2rem;
     color: #6c757d;
+}
+
+.pricing-section {
+    margin: 2rem 0;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 2rem;
+}
+
+.pricing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.pricing-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.pricing-label {
+    font-weight: 500;
+    color: #495057;
+}
+
+.pricing-value {
+    font-weight: bold;
+    color: #28a745;
+}
+
+.usage-section {
+    margin: 2rem 0;
+}
+
+@media (max-width: 768px) {
+    .pricing-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
