@@ -4,7 +4,7 @@ import { randomInt } from 'crypto';
 import { User } from './dbtypes';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
-import { users, applications } from './schema';
+import { users } from './schema';
 
 const config = getConfig();
 
@@ -37,6 +37,14 @@ class TwilioService {
    * @returns A 6-digit verification code
    */
   generateVerificationCode(): string {
+    return randomInt(100000, 999999).toString();
+  }
+
+  /**
+   * Generates a random user code
+   * @returns A 6-digit user code
+   */
+  generateUserCode(): string {
     return randomInt(100000, 999999).toString();
   }
 
@@ -202,14 +210,29 @@ class TwilioService {
 
         if (verificationCheck.status === 'approved') {
           // Create a new verified user record with approved flag set to false initially
-          const [userRecord] = await db
-            .insert(users)
-            .values({
-              phoneE164: phoneNumber,
-              lastVerified: new Date(),
-              approved: false,
-            })
-            .returning();
+          let userRecord;
+          let attempts = 0;
+          
+          while (attempts < 10) {
+            try {
+              const code = this.generateUserCode();
+              [userRecord] = await db
+                .insert(users)
+                .values({
+                  phoneE164: phoneNumber,
+                  code: code,
+                  lastVerified: new Date(),
+                  approved: false,
+                })
+                .returning();
+              break;
+            } catch (error) {
+              attempts++;
+              if (attempts >= 10 || !(error instanceof Error && error.message.includes('code'))) {
+                throw error;
+              }
+            }
+          }
 
           if (!userRecord) {
             return { status: 'failed' };

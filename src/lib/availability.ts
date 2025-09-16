@@ -1,8 +1,16 @@
 import { eq, and, sql } from 'drizzle-orm';
 import { db } from './db';
-import { units, bookings, blackouts } from './schema';
+import { units, bookings, blackouts, users } from './schema';
 import { getConfig } from './config';
 import jwt from 'jsonwebtoken';
+import { BookingMessage } from './websocketTypes';
+
+// Global reference to broadcast function (will be set by main server)
+let globalBroadcastFunction: ((message: BookingMessage) => void) | null = null;
+
+export function setBroadcastFunction(broadcastFn: (message: BookingMessage) => void) {
+  globalBroadcastFunction = broadcastFn;
+}
 
 /* ---------- return shape ---------- */
 export interface BucketRemaining {
@@ -261,6 +269,23 @@ export class AvailabilityManager {
 
       console.log(booking);
 
+      // Get user code for WebSocket message
+      if (booking && globalBroadcastFunction) {
+        const user = await tx.query.users.findFirst({
+          where: eq(users.userId, userId),
+          columns: { code: true }
+        });
+        
+        if (user?.code) {
+          globalBroadcastFunction({
+            kind: 'addAccess',
+            code: user.code,
+            start: signedSlot.slot.start.getTime(),
+            stop: signedSlot.slot.end.getTime()
+          });
+        }
+      }
+
       return !!booking;
     });
   }
@@ -408,6 +433,23 @@ export class AvailabilityManager {
         })
         .returning();
 
+      // Get user code for WebSocket message
+      if (booking && globalBroadcastFunction) {
+        const user = await tx.query.users.findFirst({
+          where: eq(users.userId, userId),
+          columns: { code: true }
+        });
+        
+        if (user?.code) {
+          globalBroadcastFunction({
+            kind: 'addAccess',
+            code: user.code,
+            start: start.getTime(),
+            stop: end.getTime()
+          });
+        }
+      }
+
       return !!booking;
     });
   }
@@ -416,18 +458,43 @@ export class AvailabilityManager {
    * Cancel a booking
    */
   async cancelBooking(bookingId: number, userId: number): Promise<boolean> {
-    const result = await db
-      .update(bookings)
-      .set({ status: 'cancelled' })
-      .where(
-        and(
+    return await db.transaction(async tx => {
+      // Get booking details before cancelling
+      const booking = await tx.query.bookings.findFirst({
+        where: and(
           eq(bookings.bookingId, bookingId),
           eq(bookings.userId, userId),
           eq(bookings.status, 'confirmed')
-        )
-      )
-      .execute();
+        ),
+        with: {
+          user: {
+            columns: { code: true }
+          }
+        }
+      });
 
-    return result.rowCount != null && result.rowCount > 0;
+      if (!booking) {
+        return false;
+      }
+
+      const result = await tx
+        .update(bookings)
+        .set({ status: 'cancelled' })
+        .where(eq(bookings.bookingId, bookingId))
+        .execute();
+
+      // Send WebSocket message for cancelled booking
+      if (result.rowCount && result.rowCount > 0 && globalBroadcastFunction && booking.user?.code) {
+        const slotData = this.parseTstzRange(booking.slot);
+        globalBroadcastFunction({
+          kind: 'removeAccess',
+          code: booking.user.code,
+          start: slotData.start.getTime(),
+          stop: slotData.end.getTime()
+        });
+      }
+
+      return result.rowCount != null && result.rowCount > 0;
+    });
   }
 }

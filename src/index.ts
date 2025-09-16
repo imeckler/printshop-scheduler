@@ -2,6 +2,7 @@ import fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import view from '@fastify/view';
 import staticFiles from '@fastify/static';
+import websocket from '@fastify/websocket';
 import handlebars from 'handlebars';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import path from 'path';
@@ -11,13 +12,14 @@ import { initializeDatabase } from './lib/db';
 import twilioService from './lib/twilio';
 import { generateAdminToken, verifyAdminToken, generatePhoneVerificationToken, getVerifiedUserIdFromRequest } from './lib/tokenService';
 import { User } from './lib/dbtypes';
-import { AvailabilityManager } from './lib/availability';
+import { AvailabilityManager, setBroadcastFunction } from './lib/availability';
 import { db } from './lib/db';
-import { bookings, users, creditBalances, creditTransactions, creditPackages, applications, units } from './lib/schema';
+import { bookings, users, creditBalances, creditTransactions, creditPackages, applications, units, risographUsages } from './lib/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { getConfig } from './lib/config';
 import { CookieSerializeOptions } from '@fastify/cookie';
+import { BookingMessage } from './lib/websocketTypes';
 
 const server = fastify().withTypeProvider<TypeBoxTypeProvider>();
 
@@ -39,6 +41,9 @@ server.setErrorHandler((error, request, reply) => {
 
 // Register cookie plugin
 server.register(cookie);
+
+// Register WebSocket plugin
+server.register(websocket);
 
 // Register form parser for HTML forms
 server.register(require('@fastify/formbody'));
@@ -474,10 +479,18 @@ server.get('/credits', { preHandler: requirePermissions(['approved']) }, async (
       limit: 20
     });
 
+    // Get recent usage data
+    const { getBillingService } = await import('./lib/billingService');
+    const billingService = getBillingService();
+    const recentUsage = await billingService.getRecentUsageForUser(userId, 10);
+    const pricing = billingService.getPricing();
+
     return reply.view('credits', {
       user: { id: userId, name: request.user!.name },
       balance: balance?.balanceCents || 0,
-      transactions
+      transactions,
+      recentUsage,
+      pricing
     });
   } catch (error) {
     console.error('Error fetching credit data:', error);
@@ -485,6 +498,8 @@ server.get('/credits', { preHandler: requirePermissions(['approved']) }, async (
       user: { id: userId, name: request.user!.name },
       balance: 0,
       transactions: [],
+      recentUsage: [],
+      pricing: { copyPriceCents: 10, stencilPriceCents: 150 },
       error: 'Failed to load credit information'
     });
   }
@@ -1222,6 +1237,100 @@ server.post(
   }
 );
 
+// Usage data submission endpoint for waverly-daemon
+const SubmitUsageDataSchema = {
+  body: Type.Object({
+    secret: Type.String(),
+    usageData: Type.Array(
+      Type.Object({
+        userIdentifier: Type.String(), // email or name to map to user
+        copiesPrinted: Type.Number({ minimum: 0 }),
+        stencilsCreated: Type.Number({ minimum: 0 }),
+        timestamp: Type.Optional(Type.String({ format: 'date-time' })),
+        rawData: Type.Optional(Type.String())
+      })
+    )
+  }),
+  response: {
+    200: Type.Object({
+      success: Type.Boolean(),
+      message: Type.String(),
+      processed: Type.Number(),
+      errors: Type.Array(Type.String())
+    }),
+    401: Type.Object({
+      error: Type.String()
+    }),
+    500: Type.Object({
+      error: Type.String()
+    })
+  }
+};
+
+server.post(
+  '/api/submit-usage-data',
+  {
+    schema: SubmitUsageDataSchema
+  },
+  async (request, reply) => {
+    const { secret, usageData } = request.body;
+
+    // Verify daemon secret
+    const daemonSecret = process.env.DAEMON_SECRET || config.general?.daemon_secret;
+    if (!daemonSecret || secret !== daemonSecret) {
+      reply.code(401);
+      return { error: 'Invalid or missing daemon secret' };
+    }
+
+    const { getBillingService, mapRisoUserToDbUser } = await import('./lib/billingService');
+    const billingService = getBillingService();
+
+    let processed = 0;
+    const errors: string[] = [];
+
+    for (const usage of usageData) {
+      try {
+        // Map user identifier to database user ID
+        const userId = await mapRisoUserToDbUser(usage.userIdentifier);
+
+        if (!userId) {
+          errors.push(`User not found: ${usage.userIdentifier}`);
+          continue;
+        }
+
+        // Insert usage record
+        await db.insert(risographUsages).values({
+          userId,
+          copiesPrinted: usage.copiesPrinted,
+          stencilsCreated: usage.stencilsCreated,
+          timestamp: usage.timestamp ? new Date(usage.timestamp) : new Date(),
+          rawData: usage.rawData
+        });
+
+        // Create billing transaction
+        await billingService.createUsageTransaction(
+          userId,
+          usage.copiesPrinted,
+          usage.stencilsCreated
+        );
+
+        processed++;
+        console.log(`Processed usage for user ${usage.userIdentifier}: ${usage.copiesPrinted} copies, ${usage.stencilsCreated} stencils`);
+      } catch (error) {
+        console.error(`Error processing usage for ${usage.userIdentifier}:`, error);
+        errors.push(`Error processing ${usage.userIdentifier}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Processed ${processed} usage records`,
+      processed,
+      errors
+    };
+  }
+);
+
 // Stripe webhook for handling successful payments
 server.post('/stripe-webhook', async (request, reply) => {
   const sig = request.headers['stripe-signature'] as string;
@@ -1266,10 +1375,88 @@ server.post('/stripe-webhook', async (request, reply) => {
   return { received: true };
 });
 
+// Helper function to parse slot range
+function parseSlot(slot: string): { start: Date; end: Date } | null {
+  const match = slot.match(/^\["([^"]+)","([^"]+)"\)$/);
+  if (!match) return null;
+
+  return {
+    start: new Date(match[1]),
+    end: new Date(match[2])
+  };
+}
+
+// Global set to store active WebSocket connections
+const wsConnections = new Set<WebSocket>();
+
+// WebSocket endpoint for booking messages
+server.register(async function (fastify) {
+  fastify.get('/ws/bookings', { websocket: true }, (socket: WebSocket, req) => {
+    // Add connection to the set
+    wsConnections.add(socket);
+
+    // Send all existing future slots on initial connection
+    sendExistingSlots(socket);
+
+    // Remove connection from set on close
+    socket.onclose = () => {
+      wsConnections.delete(socket);
+    };
+  });
+});
+
+// Function to send existing future slots to a new connection
+async function sendExistingSlots(socket: WebSocket) {
+  try {
+    // Get all future bookings from database using SQL query
+    const futureBookings = await db.query.bookings.findMany({
+      where: sql`upper(slot) > NOW()`,
+      with: {
+        user: {
+          columns: {
+            code: true
+          }
+        }
+      }
+    });
+
+    // Send addAccess message for each future booking
+    for (const booking of futureBookings) {
+      const slotData = parseSlot(booking.slot);
+      if (slotData && booking.user?.code) {
+        const message: BookingMessage = {
+          kind: 'addAccess',
+          code: booking.user.code,
+          start: slotData.start.getTime(),
+          stop: slotData.end.getTime()
+        };
+
+        socket.send(JSON.stringify(message));
+      }
+    }
+  } catch (error) {
+    console.error('Error sending existing slots:', error);
+  }
+}
+
+// Function to broadcast booking messages to all connected clients
+function broadcastBookingMessage(message: BookingMessage) {
+  const messageStr = JSON.stringify(message);
+  wsConnections.forEach(socket => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(messageStr);
+    }
+  });
+}
+
+// Connect the broadcast function to availability manager
+setBroadcastFunction(broadcastBookingMessage);
+
 async function start() {
   try {
     // Initialize database and run migrations
     await initializeDatabase();
+
 
     // Start the server
     await server.listen({ host: '0.0.0.0', port: 8080 });

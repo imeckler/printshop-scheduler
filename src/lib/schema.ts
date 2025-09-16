@@ -9,7 +9,6 @@ import {
   integer,
   bigint,
   char,
-  index,
   check,
   customType,
 } from 'drizzle-orm/pg-core';
@@ -30,6 +29,7 @@ export const users = pgTable(
     email: text('email').unique(),
     // passwordHash: text('password_hash').notNull(),
     phoneE164: text('phone_e164').notNull().unique(),
+    code: text('code').notNull().unique(),
     verificationCode: text('verification_code'),
     verificationCodeExpires: timestamp('verification_code_expires', { withTimezone: true }),
     lastVerified: timestamp('last_verified', { withTimezone: true }),
@@ -38,7 +38,7 @@ export const users = pgTable(
     applicationReviewer: boolean('application_reviewer').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  table => ({
+  () => ({
     phoneCheckConstraint: check(
       'phone_check',
       sql`phone_e164 IS NULL OR phone_e164 ~ '^\\+[1-9][0-9]{7,15}$'`
@@ -169,7 +169,7 @@ export const blackoutsRelations = relations(blackouts, ({ one }) => ({
   }),
 }));
 
-export const creditPackagesRelations = relations(creditPackages, ({ many }) => ({
+export const creditPackagesRelations = relations(creditPackages, () => ({
   // Add relations if needed for credit package purchases
 }));
 
@@ -187,6 +187,24 @@ export const creditTransactionsRelations = relations(creditTransactions, ({ one 
 export const creditBalancesRelations = relations(creditBalances, ({ one }) => ({
   user: one(users, {
     fields: [creditBalances.userId],
+    references: [users.userId],
+  }),
+}));
+
+export const risographUsages = pgTable('risograph_usages', {
+  usageId: bigserial('usage_id', { mode: 'number' }).primaryKey(),
+  userId: bigint('user_id', { mode: 'number' })
+    .notNull()
+    .references(() => users.userId, { onDelete: 'cascade' }),
+  copiesPrinted: integer('copies_printed').notNull().default(0),
+  stencilsCreated: integer('stencils_created').notNull().default(0),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  rawData: text('raw_data'), // Store scraped data for debugging
+});
+
+export const risographUsagesRelations = relations(risographUsages, ({ one }) => ({
+  user: one(users, {
+    fields: [risographUsages.userId],
     references: [users.userId],
   }),
 }));

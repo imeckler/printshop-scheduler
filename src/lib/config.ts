@@ -10,12 +10,20 @@ export interface TwilioConfig {
   phone_number: string;
 }
 
+export interface RisoConfig {
+  adminUrl: string;
+  pollingIntervalMinutes: number;
+  copyPriceCents: number;
+  stencilPriceCents: number;
+}
+
 export interface AppConfig {
   general: {
     domain: string;
     port: string;
     email: string;
     site_name: string;
+    daemon_secret?: string;
   };
   database: {
     postgresql_url: string;
@@ -24,6 +32,7 @@ export interface AppConfig {
     secret: string;
   };
   twilio?: TwilioConfig;
+  riso?: RisoConfig;
 }
 
 export const getConfig = (): AppConfig => {
