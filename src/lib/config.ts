@@ -38,6 +38,12 @@ export interface AppConfig {
 export const getConfig = (): AppConfig => {
   try {
     const config = toml.parse(fs.readFileSync('./config/config.toml', 'utf-8')) as AppConfig;
+
+    // Override database URL with environment variable if present
+    if (process.env.DATABASE_URL) {
+      config.database.postgresql_url = process.env.DATABASE_URL;
+    }
+
     return config;
   } catch {
     exitWithError(
