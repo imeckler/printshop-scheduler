@@ -25,6 +25,7 @@
     "@fastify/static": "^8.2.0",
     "@fastify/type-provider-typebox": "^5.1.0",
     "@fastify/view": "^11.1.0",
+    "@fastify/websocket": "^11.2.0",
     "@sinclair/typebox": "^0.34.35",
     "@types/moment-timezone": "^0.5.30",
     "@types/pg": "^8.15.4",
@@ -36,6 +37,7 @@
     "jsonwebtoken": "^9.0.2",
     "moment-timezone": "^0.6.0",
     "pg": "^8.16.0",
+    "puppeteer": "^24.16.1",
     "stripe": "^18.2.1",
     "toml": "^3.0.0",
     "twilio": "^5.7.1"
