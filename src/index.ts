@@ -1459,8 +1459,8 @@ async function start() {
 
 
     // Start the server
-    await server.listen({ host: '0.0.0.0', port: 8080 });
-    console.log(`Server listening at http://localhost:8080`);
+    await server.listen({ host: '0.0.0.0', port: 3000 });
+    console.log(`Server listening at http://localhost:3000`);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
