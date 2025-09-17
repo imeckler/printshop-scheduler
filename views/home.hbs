@@ -1,12 +1,12 @@
 <div class="container">
     {{#if user}}
-        <h2>Welcome back, {{user.name}}!</h2>
+        <h2>Your door/RISO code is {{user.code}}. It only works during your booked times.</h2>
         
         <div class="btn-group">
             <a href="/book" class="btn btn-primary">Book a Slot</a>
             <a href="/my-bookings" class="btn">View My Bookings</a>
         </div>
-        
+
         {{#if upcomingBookings}}
             <h3>Your Upcoming Bookings</h3>
             <table>
