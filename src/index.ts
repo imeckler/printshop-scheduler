@@ -641,7 +641,7 @@ server.post(
         // Set cookie with the token
         reply.setCookie('phone_verification', token, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
+          // secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
         });
