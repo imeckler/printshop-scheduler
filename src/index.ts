@@ -190,7 +190,14 @@ server.get('/', async (request, reply) => {
     // If user is approved, show normal homepage
     const bookings = await availabilityManager.getUserBookings(userId);
     const now = new Date();
-    const upcomingBookings = bookings.filter(booking => new Date(booking.slot.split(',')[1].slice(0, -1)) > now);
+    const upcomingBookings = bookings.filter(booking => {
+      // Parse the slot properly: ["2025-09-17 07:15:00+00","2025-09-17 07:30:00+00")
+      const slotMatch = booking.slot.match(/^\["([^"]+)","([^"]+)"\)$/);
+      if (!slotMatch) return false;
+      const endTime = new Date(slotMatch[2]);
+      console.log('comparing', endTime, 'vs', now, '=', endTime > now);
+      return endTime > now;
+    });
     console.log(upcomingBookings);
     if (user.approved) {
       return reply.view('home', {
@@ -445,8 +452,16 @@ server.get('/my-bookings', { preHandler: requirePermissions(['approved']) }, asy
 
     // Separate upcoming and past bookings
     const now = new Date();
-    const upcomingBookings = bookings.filter(booking => new Date(booking.slot.split(',')[1].slice(0, -1)) > now);
-    const pastBookings = bookings.filter(booking => new Date(booking.slot.split(',')[1].slice(0, -1)) <= now);
+    const upcomingBookings = bookings.filter(booking => {
+      const slotMatch = booking.slot.match(/^\["([^"]+)","([^"]+)"\)$/);
+      if (!slotMatch) return false;
+      return new Date(slotMatch[2]) > now;
+    });
+    const pastBookings = bookings.filter(booking => {
+      const slotMatch = booking.slot.match(/^\["([^"]+)","([^"]+)"\)$/);
+      if (!slotMatch) return false;
+      return new Date(slotMatch[2]) <= now;
+    });
 
     return reply.view('my-bookings', {
       user: { id: userId, name: request.user!.name },
