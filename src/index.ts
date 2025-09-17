@@ -220,7 +220,7 @@ server.get('/', async (request, reply) => {
     } else {
       // Application exists - show status page
       return reply.view('application-status', {
-        user: { id: userId, name: user.name },
+        user: { id: userId, name: user.name, code: user.code },
         application: {
           status: application.status,
           submittedAt: application.createdAt,

@@ -261,29 +261,51 @@ class BookingManager {
     slotElement.addEventListener('mousedown', (e) => this.startSelection(e, index));
     slotElement.addEventListener('mouseenter', (e) => this.updateSelection(e, index));
     slotElement.addEventListener('mouseup', (e) => this.endSelection(e, index));
+
+    // Add touch event listeners for mobile support
+    slotElement.addEventListener('touchstart', (e) => {
+      e.preventDefault(); // Prevent scrolling
+      this.startSelection(e, index);
+    }, { passive: false });
+    slotElement.addEventListener('touchmove', (e) => {
+      e.preventDefault(); // Prevent scrolling
+      // Find which slot the touch is over
+      const touch = e.touches[0];
+      const element = document.elementFromPoint(touch.clientX, touch.clientY);
+      const slotElement = element?.closest('.time-slot') as HTMLElement;
+      if (slotElement?.dataset.index) {
+        const touchIndex = parseInt(slotElement.dataset.index);
+        this.updateSelection(e, touchIndex);
+      }
+    }, { passive: false });
+    slotElement.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.endSelection(e, index);
+    }, { passive: false });
     
     return slotElement;
   }
 
-  private startSelection(event: MouseEvent, index: number): void {
+  private startSelection(event: MouseEvent | TouchEvent, index: number): void {
     event.preventDefault();
     this.isDragging = true;
     this.selectedStartIndex = index;
     this.selectedEndIndex = index;
     this.updateSelectionDisplay();
     
-    // Add global mouse up listener
+    // Add global mouse/touch end listeners
     document.addEventListener('mouseup', this.globalMouseUp.bind(this), { once: true });
+    document.addEventListener('touchend', this.globalMouseUp.bind(this), { once: true });
   }
   
-  private updateSelection(event: MouseEvent, index: number): void {
+  private updateSelection(event: MouseEvent | TouchEvent, index: number): void {
     if (!this.isDragging || this.selectedStartIndex === null) return;
     
     this.selectedEndIndex = index;
     this.updateSelectionDisplay();
   }
   
-  private endSelection(event: MouseEvent, index: number): void {
+  private endSelection(event: MouseEvent | TouchEvent, index: number): void {
     if (!this.isDragging) return;
     this.isDragging = false;
   }
