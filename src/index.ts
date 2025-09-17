@@ -90,6 +90,7 @@ handlebars.registerHelper('formatSlot', function (slotRange: string) {
   const endDate = new Date(match[2]);
 
   const startFormatted = startDate.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -99,6 +100,7 @@ handlebars.registerHelper('formatSlot', function (slotRange: string) {
   });
 
   const endFormatted = endDate.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
@@ -108,6 +110,7 @@ handlebars.registerHelper('formatSlot', function (slotRange: string) {
 });
 handlebars.registerHelper('formatDateTime', function (date: Date) {
   return new Date(date).toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
     year: 'numeric',
     month: 'short',
     day: 'numeric',
