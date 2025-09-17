@@ -204,7 +204,7 @@ server.get('/', async (request, reply) => {
     console.log(upcomingBookings);
     if (user.approved) {
       return reply.view('home', {
-        user: { id: userId, name: user.name },
+        user: { id: userId, name: user.name, code: user.code },
         upcomingBookings,
       });
     }
@@ -220,7 +220,7 @@ server.get('/', async (request, reply) => {
     } else {
       // Application exists - show status page
       return reply.view('application-status', {
-        user: { id: userId, name: user.name, code: user.code },
+        user: { id: userId, name: user.name },
         application: {
           status: application.status,
           submittedAt: application.createdAt,
