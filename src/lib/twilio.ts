@@ -109,13 +109,13 @@ class TwilioService {
         // Use messaging service if configured, otherwise use from phone number
         if (this.messagingServiceSid) {
           await this.client.messages.create({
-            body: `Your verification code for ContraBanya is: ${code}`,
+            body: `Your verification code for the printshop is: ${code}`,
             to: phoneNumber,
             messagingServiceSid: this.messagingServiceSid,
           });
         } else {
           await this.client.messages.create({
-            body: `Your verification code for ContraBanya is: ${code}`,
+            body: `Your verification code for the printshop is: ${code}`,
             to: phoneNumber,
             from: this.fromPhoneNumber,
           });
@@ -212,7 +212,7 @@ class TwilioService {
           // Create a new verified user record with approved flag set to false initially
           let userRecord;
           let attempts = 0;
-          
+
           while (attempts < 10) {
             try {
               const code = this.generateUserCode();
