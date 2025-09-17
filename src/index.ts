@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import view from '@fastify/view';
 import staticFiles from '@fastify/static';
 import websocket from '@fastify/websocket';
+import WebSocket from 'ws';
 import handlebars from 'handlebars';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import path from 'path';
@@ -641,7 +642,7 @@ server.post(
         // Set cookie with the token
         reply.setCookie('phone_verification', token, {
           httpOnly: true,
-          // secure: process.env.NODE_ENV === 'production',
+          secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
         });
