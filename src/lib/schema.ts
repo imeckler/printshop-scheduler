@@ -208,3 +208,23 @@ export const risographUsagesRelations = relations(risographUsages, ({ one }) => 
     references: [users.userId],
   }),
 }));
+
+// Track last seen RISO totals to detect resets and calculate incremental usage
+export const risoLastSeenTotals = pgTable('riso_last_seen_totals', {
+  userId: bigint('user_id', { mode: 'number' })
+    .primaryKey()
+    .references(() => users.userId, { onDelete: 'cascade' }),
+  lastSeenCopies: integer('last_seen_copies').notNull().default(0),
+  lastSeenStencils: integer('last_seen_stencils').notNull().default(0),
+  cumulativeCopiesBilled: integer('cumulative_copies_billed').notNull().default(0),
+  cumulativeStencilsBilled: integer('cumulative_stencils_billed').notNull().default(0),
+  lastReportDate: timestamp('last_report_date', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const risoLastSeenTotalsRelations = relations(risoLastSeenTotals, ({ one }) => ({
+  user: one(users, {
+    fields: [risoLastSeenTotals.userId],
+    references: [users.userId],
+  }),
+}));

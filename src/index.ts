@@ -15,7 +15,7 @@ import { generateAdminToken, verifyAdminToken, generatePhoneVerificationToken, g
 import { User } from './lib/dbtypes';
 import { AvailabilityManager, setBroadcastFunction } from './lib/availability';
 import { db } from './lib/db';
-import { bookings, users, creditBalances, creditTransactions, creditPackages, applications, units, risographUsages } from './lib/schema';
+import { bookings, users, creditBalances, creditTransactions, creditPackages, applications, units, risographUsages, risoLastSeenTotals } from './lib/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { getConfig } from './lib/config';
@@ -443,8 +443,16 @@ server.get('/review-applications', { preHandler: requirePermissions(['applicatio
 });
 
 server.get('/book', { preHandler: requirePermissions(['approved', 'trained']) }, async (request, reply) => {
+  const userId = request.user!.userId;
+
+  // Get user's credit balance
+  const balance = await db.query.creditBalances.findFirst({
+    where: eq(creditBalances.userId, userId)
+  });
+
   return reply.view('booking', {
-    user: { id: request.user!.userId, name: request.user!.name }
+    user: { id: userId, name: request.user!.name },
+    balance: balance?.balanceCents || 0
   });
 });
 
@@ -741,6 +749,10 @@ const BookSlotSchema = {
     401: Type.Object({
       error: Type.String(),
     }),
+    402: Type.Object({
+      error: Type.String(),
+      balance: Type.Number(),
+    }),
     500: Type.Object({
       error: Type.String(),
     }),
@@ -815,6 +827,20 @@ server.post(
       };
 
       const userId = request.user!.userId;
+
+      // Check if user has sufficient balance (must not be negative)
+      const balance = await db.query.creditBalances.findFirst({
+        where: eq(creditBalances.userId, userId)
+      });
+
+      if (balance && balance.balanceCents < 0) {
+        reply.code(402); // 402 Payment Required
+        return {
+          error: 'Insufficient credits. Your balance is negative. Please add credits to your account before booking.',
+          balance: balance.balanceCents
+        };
+      }
+
       // Book the slot (verification happens inside bookSlot)
       const success = await availabilityManager.bookSlot(userId, slotData);
 
@@ -917,6 +943,19 @@ server.post(
       const startDate = new Date(start);
       const endDate = new Date(end);
       const userId = request.user!.userId;
+
+      // Check if user has sufficient balance (must not be negative)
+      const balance = await db.query.creditBalances.findFirst({
+        where: eq(creditBalances.userId, userId)
+      });
+
+      if (balance && balance.balanceCents < 0) {
+        reply.code(402); // 402 Payment Required
+        return {
+          error: 'Insufficient credits. Your balance is negative. Please add credits to your account before booking.',
+          balance: balance.balanceCents
+        };
+      }
 
       console.log('boooook',
         startDate, endDate);
@@ -1256,26 +1295,19 @@ server.post(
   }
 );
 
-// Usage data submission endpoint for waverly-daemon
-const SubmitUsageDataSchema = {
+// Usage data submission endpoint - accepts RISO CSV format
+const SubmitUsageCsvSchema = {
   body: Type.Object({
     secret: Type.String(),
-    usageData: Type.Array(
-      Type.Object({
-        userIdentifier: Type.String(), // email or name to map to user
-        copiesPrinted: Type.Number({ minimum: 0 }),
-        stencilsCreated: Type.Number({ minimum: 0 }),
-        timestamp: Type.Optional(Type.String({ format: 'date-time' })),
-        rawData: Type.Optional(Type.String())
-      })
-    )
+    csvData: Type.String(), // RISO CSV report content
   }),
   response: {
     200: Type.Object({
       success: Type.Boolean(),
       message: Type.String(),
       processed: Type.Number(),
-      errors: Type.Array(Type.String())
+      errors: Type.Array(Type.String()),
+      resetsDetected: Type.Array(Type.String())
     }),
     401: Type.Object({
       error: Type.String()
@@ -1287,12 +1319,12 @@ const SubmitUsageDataSchema = {
 };
 
 server.post(
-  '/api/submit-usage-data',
+  '/api/submit-usage-csv',
   {
-    schema: SubmitUsageDataSchema
+    schema: SubmitUsageCsvSchema
   },
   async (request, reply) => {
-    const { secret, usageData } = request.body;
+    const { secret, csvData } = request.body;
 
     // Verify daemon secret
     const daemonSecret = process.env.DAEMON_SECRET || config.general?.daemon_secret;
@@ -1301,52 +1333,132 @@ server.post(
       return { error: 'Invalid or missing daemon secret' };
     }
 
-    const { getBillingService, mapRisoUserToDbUser } = await import('./lib/billingService');
-    const billingService = getBillingService();
+    try {
+      // Parse RISO CSV
+      const { parseRisoCsv } = await import('./lib/risoCsvParser');
+      const risoData = parseRisoCsv(csvData);
 
-    let processed = 0;
-    const errors: string[] = [];
+      const { getBillingService, mapRisoUserToDbUser } = await import('./lib/billingService');
+      const billingService = getBillingService();
 
-    for (const usage of usageData) {
-      try {
-        // Map user identifier to database user ID
-        const userId = await mapRisoUserToDbUser(usage.userIdentifier);
+      let processed = 0;
+      const errors: string[] = [];
+      const resetsDetected: string[] = [];
 
-        if (!userId) {
-          errors.push(`User not found: ${usage.userIdentifier}`);
-          continue;
+      // Process each user in the CSV
+      for (const risoUser of risoData.users) {
+        try {
+          // Map RISO username to database user ID
+          const userId = await mapRisoUserToDbUser(risoUser.userName);
+
+          if (!userId) {
+            errors.push(`User not found: ${risoUser.userName}`);
+            continue;
+          }
+
+          // Get last seen totals for this user
+          const lastSeen = await db.query.risoLastSeenTotals.findFirst({
+            where: eq(risoLastSeenTotals.userId, userId)
+          });
+
+          const lastSeenCopies = lastSeen?.lastSeenCopies || 0;
+          const lastSeenStencils = lastSeen?.lastSeenStencils || 0;
+          const cumulativeCopiesBilled = lastSeen?.cumulativeCopiesBilled || 0;
+          const cumulativeStencilsBilled = lastSeen?.cumulativeStencilsBilled || 0;
+
+          let copiesToBill = 0;
+          let stencilsToBill = 0;
+
+          // Check for counter reset
+          if (risoUser.totalCopies < lastSeenCopies || risoUser.masterCount < lastSeenStencils) {
+            // RESET DETECTED!
+            resetsDetected.push(`${risoUser.userName}: copies ${lastSeenCopies} → ${risoUser.totalCopies}, stencils ${lastSeenStencils} → ${risoUser.masterCount}`);
+
+            // Bill for unbilled pre-reset usage
+            const preResetUnbilledCopies = Math.max(0, lastSeenCopies - cumulativeCopiesBilled);
+            const preResetUnbilledStencils = Math.max(0, lastSeenStencils - cumulativeStencilsBilled);
+
+            // Bill for post-reset usage (current totals)
+            copiesToBill = preResetUnbilledCopies + risoUser.totalCopies;
+            stencilsToBill = preResetUnbilledStencils + risoUser.masterCount;
+
+            console.log(`Reset detected for ${risoUser.userName}: billing ${preResetUnbilledCopies} pre-reset + ${risoUser.totalCopies} post-reset copies`);
+          } else {
+            // Normal case: counter increased
+            const incrementalCopies = risoUser.totalCopies - lastSeenCopies;
+            const incrementalStencils = risoUser.masterCount - lastSeenStencils;
+
+            copiesToBill = incrementalCopies;
+            stencilsToBill = incrementalStencils;
+          }
+
+          // Only process if there's something to bill
+          if (copiesToBill > 0 || stencilsToBill > 0) {
+            // Insert usage record
+            await db.insert(risographUsages).values({
+              userId,
+              copiesPrinted: copiesToBill,
+              stencilsCreated: stencilsToBill,
+              timestamp: new Date(`${risoData.date} ${risoData.time}`),
+              rawData: `Model: ${risoData.model}, Serial: ${risoData.serial}, User: ${risoUser.userName}`
+            });
+
+            // Create billing transaction
+            await billingService.createUsageTransaction(
+              userId,
+              copiesToBill,
+              stencilsToBill
+            );
+
+            console.log(`Billed ${risoUser.userName}: ${copiesToBill} copies, ${stencilsToBill} stencils`);
+          }
+
+          // Update last seen totals and cumulative billed
+          const newCumulativeCopies = (lastSeen ? cumulativeCopiesBilled : 0) + copiesToBill;
+          const newCumulativeStencils = (lastSeen ? cumulativeStencilsBilled : 0) + stencilsToBill;
+
+          if (lastSeen) {
+            await db.update(risoLastSeenTotals)
+              .set({
+                lastSeenCopies: risoUser.totalCopies,
+                lastSeenStencils: risoUser.masterCount,
+                cumulativeCopiesBilled: newCumulativeCopies,
+                cumulativeStencilsBilled: newCumulativeStencils,
+                lastReportDate: new Date(`${risoData.date} ${risoData.time}`),
+                updatedAt: new Date()
+              })
+              .where(eq(risoLastSeenTotals.userId, userId));
+          } else {
+            await db.insert(risoLastSeenTotals).values({
+              userId,
+              lastSeenCopies: risoUser.totalCopies,
+              lastSeenStencils: risoUser.masterCount,
+              cumulativeCopiesBilled: newCumulativeCopies,
+              cumulativeStencilsBilled: newCumulativeStencils,
+              lastReportDate: new Date(`${risoData.date} ${risoData.time}`),
+              updatedAt: new Date()
+            });
+          }
+
+          processed++;
+        } catch (error) {
+          console.error(`Error processing usage for ${risoUser.userName}:`, error);
+          errors.push(`Error processing ${risoUser.userName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-
-        // Insert usage record
-        await db.insert(risographUsages).values({
-          userId,
-          copiesPrinted: usage.copiesPrinted,
-          stencilsCreated: usage.stencilsCreated,
-          timestamp: usage.timestamp ? new Date(usage.timestamp) : new Date(),
-          rawData: usage.rawData
-        });
-
-        // Create billing transaction
-        await billingService.createUsageTransaction(
-          userId,
-          usage.copiesPrinted,
-          usage.stencilsCreated
-        );
-
-        processed++;
-        console.log(`Processed usage for user ${usage.userIdentifier}: ${usage.copiesPrinted} copies, ${usage.stencilsCreated} stencils`);
-      } catch (error) {
-        console.error(`Error processing usage for ${usage.userIdentifier}:`, error);
-        errors.push(`Error processing ${usage.userIdentifier}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
-    }
 
-    return {
-      success: true,
-      message: `Processed ${processed} usage records`,
-      processed,
-      errors
-    };
+      return {
+        success: true,
+        message: `Processed ${processed} user records from RISO report dated ${risoData.date} ${risoData.time}`,
+        processed,
+        errors,
+        resetsDetected
+      };
+    } catch (error) {
+      console.error('Error processing RISO CSV:', error);
+      reply.code(500);
+      return { error: error instanceof Error ? error.message : 'Failed to process CSV' };
+    }
   }
 );
 

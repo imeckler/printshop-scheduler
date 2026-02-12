@@ -384,6 +384,12 @@ class BookingManager {
       if (response.ok) {
         alert('Booking successful! Redirecting to home page...');
         window.location.href = '/';
+      } else if (response.status === 402) {
+        const result = await response.json();
+        const errorMsg = result.error || 'Insufficient credits';
+        if (confirm(errorMsg + '\n\nWould you like to add credits now?')) {
+          window.location.href = '/credits';
+        }
       } else {
         const result = await response.json();
         alert('Booking failed: ' + (result.error || 'Unknown error'));

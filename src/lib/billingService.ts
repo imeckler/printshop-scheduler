@@ -17,9 +17,9 @@ export class BillingService {
 
   constructor() {
     const config = getConfig();
-    // Default prices if not configured: $0.10 per copy, $1.50 per stencil
-    this.copyPriceCents = config.riso?.copyPriceCents || 10;
-    this.stencilPriceCents = config.riso?.stencilPriceCents || 150;
+    // Default prices if not configured: $0.03 per copy, $0.35 per stencil
+    this.copyPriceCents = config.riso?.copyPriceCents || 3;
+    this.stencilPriceCents = config.riso?.stencilPriceCents || 35;
   }
 
   calculateUsageCharges(copiesPrinted: number, stencilsCreated: number): UsageSummary {

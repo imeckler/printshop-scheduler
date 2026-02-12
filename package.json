@@ -30,6 +30,7 @@
     "@types/moment-timezone": "^0.5.30",
     "@types/pg": "^8.15.4",
     "@types/stripe": "^8.0.417",
+    "csv-parse": "^6.1.0",
     "drizzle-orm": "^0.44.2",
     "fastify": "^5.4.0",
     "handlebars": "^4.7.8",

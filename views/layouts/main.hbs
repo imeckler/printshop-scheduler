@@ -10,8 +10,13 @@
     <header>
         <h1>Printshop Booking System</h1>
         {{#if user}}
+            <nav class="main-nav">
+                <a href="/">Home</a>
+                <a href="/book">Book</a>
+                <a href="/credits">My Credits</a>
+            </nav>
             <div class="user-info">
-                Welcome, {{user.name}}! 
+                Welcome, {{user.name}}!
                 <a href="/logout">Logout</a>
             </div>
         {{/if}}

@@ -20,10 +20,29 @@ header {
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
+    gap: 1rem;
 }
 
 header h1 {
     font-size: 1.5rem;
+}
+
+.main-nav {
+    display: flex;
+    gap: 1.5rem;
+    margin-left: auto;
+}
+
+.main-nav a {
+    color: #ecf0f1;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.main-nav a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
 .user-info {
@@ -118,9 +137,15 @@ th {
         text-align: center;
         gap: 0.5rem;
     }
-    
+
     header h1 {
         font-size: 1.25rem;
+    }
+
+    .main-nav {
+        width: 100%;
+        justify-content: center;
+        margin-left: 0;
     }
     
     main {

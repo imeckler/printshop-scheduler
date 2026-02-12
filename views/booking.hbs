@@ -1,6 +1,14 @@
 <div class="container">
     <h2>Book a time slot</h2>
-    
+
+    {{#if (lt balance 0)}}
+        <div class="alert alert-danger">
+            <strong>Warning:</strong> Your account balance is negative (${{formatCurrency balance}}).
+            You will not be able to complete bookings until you add credits to your account.
+            <a href="/credits" class="btn btn-sm" style="margin-left: 10px;">Add Credits Now</a>
+        </div>
+    {{/if}}
+
     <div id="booking-container">
         <div class="form-group">
             <label for="bookingDate">Select Date:</label>
