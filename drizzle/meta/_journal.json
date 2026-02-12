@@ -15,6 +15,13 @@
       "when": 1758065170102,
       "tag": "0001_square_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770938121922,
+      "tag": "0002_faulty_zaran",
+      "breakpoints": true
     }
   ]
 }
