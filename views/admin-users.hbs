@@ -26,6 +26,7 @@
                         <th>Phone</th>
                         <th>Name</th>
                         <th>Email</th>
+                        <th>RISO Username</th>
                         <th>Approved</th>
                         <th>Trained</th>
                         <th>Joined</th>
@@ -40,6 +41,13 @@
                         <td>{{name}}</td>
                         <td>{{email}}</td>
                         <td>
+                            {{#if risoUsername}}
+                                <code>{{risoUsername}}</code>
+                            {{else}}
+                                <span class="text-muted">Not set</span>
+                            {{/if}}
+                        </td>
+                        <td>
                             <span class="status-badge {{#if approved}}approved{{else}}pending{{/if}}">
                                 {{#if approved}}✅ Yes{{else}}❌ No{{/if}}
                             </span>
@@ -51,7 +59,7 @@
                         </td>
                         <td>{{formatDate createdAt}}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', {{approved}}, {{trained}})">
+                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}})">
                                 Edit
                             </button>
                         </td>
@@ -75,14 +83,24 @@
         <form id="editForm" method="POST">
             <div class="modal-body">
                 <p><strong>User:</strong> <span id="modalUserName"></span></p>
-                
+
+                <div class="form-group">
+                    <label for="modalRisoUsername">RISO Username:</label>
+                    <input type="text"
+                           id="modalRisoUsername"
+                           name="risoUsername"
+                           class="form-input"
+                           placeholder="e.g., izzy, admin">
+                    <small class="form-hint">Username from RISO machine usage reports. Leave blank if user doesn't use RISO.</small>
+                </div>
+
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="modalApproved" name="approved">
                         Approved (can access the system)
                     </label>
                 </div>
-                
+
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="modalTrained" name="trained">
@@ -265,6 +283,32 @@
     cursor: pointer;
 }
 
+.form-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.form-input:focus {
+    border-color: #007bff;
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
+}
+
+.form-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.text-muted {
+    color: #6c757d;
+    font-style: italic;
+}
+
 .no-data {
     text-align: center;
     padding: 2rem;
@@ -273,8 +317,9 @@
 </style>
 
 <script>
-function openEditModal(userId, userName, approved, trained) {
+function openEditModal(userId, userName, risoUsername, approved, trained) {
     document.getElementById('modalUserName').textContent = userName;
+    document.getElementById('modalRisoUsername').value = risoUsername || '';
     document.getElementById('modalApproved').checked = approved;
     document.getElementById('modalTrained').checked = trained;
     document.getElementById('editForm').action = `/admin/users/${userId}/update`;

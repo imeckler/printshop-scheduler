@@ -96,17 +96,9 @@ export class BillingService {
 
 // Helper function to map Riso user identifiers to database user IDs
 export async function mapRisoUserToDbUser(risoUserIdentifier: string): Promise<number | null> {
-  if (risoUserIdentifier.includes('@')) {
-    // Email lookup
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, risoUserIdentifier)
-    });
-    return user?.userId || null;
-  }
-
-  // Try name lookup
+  // Look up by RISO username only
   const user = await db.query.users.findFirst({
-    where: eq(users.name, risoUserIdentifier)
+    where: eq(users.risoUsername, risoUserIdentifier)
   });
 
   return user?.userId || null;

@@ -388,13 +388,18 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
 
   try {
     const { userId } = request.params as { userId: string };
-    const { approved, trained } = request.body as { approved?: string; trained?: string };
+    const { approved, trained, risoUsername } = request.body as {
+      approved?: string;
+      trained?: string;
+      risoUsername?: string;
+    };
 
     await db
       .update(users)
       .set({
         approved: approved === 'on',
-        trained: trained === 'on'
+        trained: trained === 'on',
+        risoUsername: risoUsername?.trim() || null
       })
       .where(eq(users.userId, parseInt(userId)));
 

@@ -36,6 +36,7 @@ export const users = pgTable(
     approved: boolean('approved').notNull().default(false),
     trained: boolean('trained').notNull().default(false),
     applicationReviewer: boolean('application_reviewer').notNull().default(false),
+    risoUsername: text('riso_username'), // Username on RISO machine for usage tracking
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   () => ({

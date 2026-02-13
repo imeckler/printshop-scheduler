@@ -22,6 +22,13 @@
       "when": 1770938121922,
       "tag": "0002_faulty_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1770943079246,
+      "tag": "0003_strange_dexter_bennett",
+      "breakpoints": true
     }
   ]
 }
