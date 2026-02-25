@@ -24,6 +24,7 @@ export interface AppConfig {
     email: string;
     site_name: string;
     daemon_secret?: string;
+    site_password?: string;
   };
   database: {
     postgresql_url: string;

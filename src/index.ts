@@ -6,6 +6,7 @@ import websocket from '@fastify/websocket';
 import WebSocket from 'ws';
 import handlebars from 'handlebars';
 import { FastifyRequest, FastifyReply } from 'fastify';
+import crypto from 'crypto';
 import path from 'path';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
@@ -171,6 +172,55 @@ const config = getConfig();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2025-07-30.basil',
 });
+
+// Site password gate
+if (config.general.site_password) {
+  const siteAccessToken = crypto.createHmac('sha256', config.jwt.secret)
+    .update(config.general.site_password)
+    .digest('hex');
+
+  server.addHook('onRequest', async (request, reply) => {
+    const url = request.url.split('?')[0];
+    if (url === '/gate' || url.startsWith('/public/') || url === '/ping' ||
+        url === '/stripe-webhook' || url === '/api/submit-usage-csv' ||
+        url.startsWith('/ws/')) {
+      return;
+    }
+    if (request.cookies?.site_access === siteAccessToken) {
+      return;
+    }
+    return reply.redirect('/gate');
+  });
+
+  server.get('/gate', async (request, reply) => {
+    if (request.cookies?.site_access === siteAccessToken) {
+      return reply.redirect('/');
+    }
+    const error = (request.query as any).error;
+    const template = handlebars.compile(
+      require('fs').readFileSync(path.join(__dirname, '..', 'views', 'gate.hbs'), 'utf-8')
+    );
+    return reply.type('text/html').send(template({
+      siteName: config.general.site_name,
+      error: !!error,
+    }));
+  });
+
+  server.post('/gate', async (request, reply) => {
+    const { password } = request.body as { password: string };
+    if (password === config.general.site_password) {
+      reply.setCookie('site_access', siteAccessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 365 * 24 * 60 * 60, // 1 year
+        path: '/'
+      });
+      return reply.redirect('/');
+    }
+    return reply.redirect('/gate?error=1');
+  });
+}
 
 server.get('/ping', async (request, reply) => {
   return 'pong\n';

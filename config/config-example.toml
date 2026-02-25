@@ -3,6 +3,7 @@ domain = "localhost:8080"
 port = "8080"
 email = "admin@example.com"
 site_name = "Printshop Booking System"
+# site_password = "your-site-password"
 
 [database]
 postgresql_url = "postgresql://printshop_user:printshop_password@localhost:5432/printshop"
