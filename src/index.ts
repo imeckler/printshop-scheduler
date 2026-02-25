@@ -892,11 +892,11 @@ server.post(
         where: eq(creditBalances.userId, userId)
       });
 
-      if (balance && balance.balanceCents < 0) {
+      if (!balance || balance.balanceCents <= 0) {
         reply.code(402); // 402 Payment Required
         return {
-          error: 'Insufficient credits. Your balance is negative. Please add credits to your account before booking.',
-          balance: balance.balanceCents
+          error: 'Insufficient credits. Please add credits to your account before booking.',
+          balance: balance?.balanceCents ?? 0
         };
       }
 
@@ -1008,11 +1008,11 @@ server.post(
         where: eq(creditBalances.userId, userId)
       });
 
-      if (balance && balance.balanceCents < 0) {
+      if (!balance || balance.balanceCents <= 0) {
         reply.code(402); // 402 Payment Required
         return {
-          error: 'Insufficient credits. Your balance is negative. Please add credits to your account before booking.',
-          balance: balance.balanceCents
+          error: 'Insufficient credits. Please add credits to your account before booking.',
+          balance: balance?.balanceCents ?? 0
         };
       }
 
