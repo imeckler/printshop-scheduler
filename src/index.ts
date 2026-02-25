@@ -129,6 +129,10 @@ handlebars.registerHelper('gt', function (a: number, b: number) {
   return a > b;
 });
 
+handlebars.registerHelper('lt', function (a: number, b: number) {
+  return a < b;
+});
+
 handlebars.registerHelper('subtract', function (a: number, b: number) {
   return a - b;
 });
