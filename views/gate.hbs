@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{siteName}}</title>
+    <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+    <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+        <div class="admin-login-form">
+            <h2>{{siteName}}</h2>
+            {{#if error}}
+                <div class="alert alert-danger">Incorrect password</div>
+            {{/if}}
+            <form method="POST" action="/gate">
+                <div class="form-group">
+                    <input type="password" name="password" placeholder="Password" required autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%">Enter</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
