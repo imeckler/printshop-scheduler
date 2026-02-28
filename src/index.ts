@@ -186,8 +186,8 @@ if (config.general.site_password) {
   server.addHook('onRequest', async (request, reply) => {
     const url = request.url.split('?')[0];
     if (url === '/gate' || url.startsWith('/public/') || url === '/ping' ||
-        url === '/stripe-webhook' || url === '/api/submit-usage-csv' ||
-        url.startsWith('/ws/')) {
+      url === '/stripe-webhook' || url === '/api/submit-usage-csv' ||
+      url.startsWith('/ws/')) {
       return;
     }
     if (request.cookies?.site_access === siteAccessToken) {
@@ -1289,8 +1289,8 @@ server.get(
 // Stripe checkout session schema
 const CreateCheckoutSessionSchema = {
   body: Type.Object({
-    creditAmountCents: Type.Number({ minimum: 2000, maximum: 50000 }), // $5 to $500
-    totalChargeCents: Type.Number({ minimum: 2000 }),
+    creditAmountCents: Type.Number({ minimum: 500, maximum: 50000 }), // $5 to $500
+    totalChargeCents: Type.Number({ minimum: 500 }),
   }),
   response: {
     200: Type.Object({
