@@ -15,12 +15,6 @@ BEGIN
         balance_cents = credit_balances.balance_cents + NEW.amount_cents,
         updated_at    = now();
 
-    -- Safety-net: disallow negative wallet
-    IF (SELECT balance_cents FROM credit_balances WHERE user_id = NEW.user_id) < 0
-    THEN
-        RAISE EXCEPTION 'Insufficient credits (user_id=%)', NEW.user_id;
-    END IF;
-
     RETURN NEW;
 END;
 $$;
