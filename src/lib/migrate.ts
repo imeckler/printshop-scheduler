@@ -12,6 +12,7 @@ const config = getConfig();
 export async function runMigrations() {
   const pool = new Pool({
     connectionString: config.database.postgresql_url,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
   });
 
   const db = drizzle(pool, { schema });
