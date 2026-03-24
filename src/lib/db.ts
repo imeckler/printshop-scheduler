@@ -7,7 +7,7 @@ import * as schema from './schema';
 const config = getConfig();
 const pool = new Pool({
   connectionString: config.database.postgresql_url,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  ssl: { rejectUnauthorized: false },
 });
 
 export const db = drizzle(pool, { schema });
