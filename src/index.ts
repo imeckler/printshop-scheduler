@@ -1415,89 +1415,124 @@ server.post(
             continue;
           }
 
-          // Get last seen totals for this user
-          const lastSeen = await db.query.risoLastSeenTotals.findFirst({
-            where: eq(risoLastSeenTotals.userId, userId)
+          const reportTimestamp = new Date(`${risoData.date} ${risoData.time}`);
+
+          // Wrap entire read-compute-bill cycle in a transaction with row lock
+          // to prevent double-billing from concurrent/duplicate CSV uploads
+          await db.transaction(async (tx) => {
+            // Lock the lastSeen row (SELECT FOR UPDATE) to serialize concurrent uploads
+            const [lastSeen] = await tx.select().from(risoLastSeenTotals)
+              .where(eq(risoLastSeenTotals.userId, userId))
+              .for('update');
+
+            // Skip if we've already processed this or a newer report
+            if (lastSeen?.lastReportDate && reportTimestamp <= lastSeen.lastReportDate) {
+              console.log(`Skipping ${risoUser.userName}: report date ${reportTimestamp.toISOString()} <= last processed ${lastSeen.lastReportDate.toISOString()}`);
+              return;
+            }
+
+            const lastSeenCopies = lastSeen?.lastSeenCopies || 0;
+            const lastSeenStencils = lastSeen?.lastSeenStencils || 0;
+            const cumulativeCopiesBilled = lastSeen?.cumulativeCopiesBilled || 0;
+            const cumulativeStencilsBilled = lastSeen?.cumulativeStencilsBilled || 0;
+
+            let copiesToBill = 0;
+            let stencilsToBill = 0;
+
+            // Check for counter reset
+            if (risoUser.totalCopies < lastSeenCopies || risoUser.masterCount < lastSeenStencils) {
+              // RESET DETECTED!
+              resetsDetected.push(`${risoUser.userName}: copies ${lastSeenCopies} → ${risoUser.totalCopies}, stencils ${lastSeenStencils} → ${risoUser.masterCount}`);
+
+              // Bill for unbilled pre-reset usage
+              const preResetUnbilledCopies = Math.max(0, lastSeenCopies - cumulativeCopiesBilled);
+              const preResetUnbilledStencils = Math.max(0, lastSeenStencils - cumulativeStencilsBilled);
+
+              // Bill for post-reset usage (current totals)
+              copiesToBill = preResetUnbilledCopies + risoUser.totalCopies;
+              stencilsToBill = preResetUnbilledStencils + risoUser.masterCount;
+
+              console.log(`Reset detected for ${risoUser.userName}: billing ${preResetUnbilledCopies} pre-reset + ${risoUser.totalCopies} post-reset copies`);
+            } else {
+              // Normal case: counter increased
+              const incrementalCopies = risoUser.totalCopies - lastSeenCopies;
+              const incrementalStencils = risoUser.masterCount - lastSeenStencils;
+
+              copiesToBill = incrementalCopies;
+              stencilsToBill = incrementalStencils;
+            }
+
+            // Only process if there's something to bill
+            if (copiesToBill > 0 || stencilsToBill > 0) {
+              const newCumulativeCopies = (lastSeen ? cumulativeCopiesBilled : 0) + copiesToBill;
+              const newCumulativeStencils = (lastSeen ? cumulativeStencilsBilled : 0) + stencilsToBill;
+
+              // Insert usage record
+              await tx.insert(risographUsages).values({
+                userId,
+                copiesPrinted: copiesToBill,
+                stencilsCreated: stencilsToBill,
+                timestamp: reportTimestamp,
+                rawData: `Model: ${risoData.model}, Serial: ${risoData.serial}, User: ${risoUser.userName}`
+              });
+
+              // Create billing transaction
+              await billingService.createUsageTransaction(
+                userId,
+                copiesToBill,
+                stencilsToBill,
+                tx
+              );
+
+              // Update last seen totals and cumulative billed
+              if (lastSeen) {
+                await tx.update(risoLastSeenTotals)
+                  .set({
+                    lastSeenCopies: risoUser.totalCopies,
+                    lastSeenStencils: risoUser.masterCount,
+                    cumulativeCopiesBilled: newCumulativeCopies,
+                    cumulativeStencilsBilled: newCumulativeStencils,
+                    lastReportDate: reportTimestamp,
+                    updatedAt: new Date()
+                  })
+                  .where(eq(risoLastSeenTotals.userId, userId));
+              } else {
+                await tx.insert(risoLastSeenTotals).values({
+                  userId,
+                  lastSeenCopies: risoUser.totalCopies,
+                  lastSeenStencils: risoUser.masterCount,
+                  cumulativeCopiesBilled: newCumulativeCopies,
+                  cumulativeStencilsBilled: newCumulativeStencils,
+                  lastReportDate: reportTimestamp,
+                  updatedAt: new Date()
+                });
+              }
+
+              console.log(`Billed ${risoUser.userName}: ${copiesToBill} copies, ${stencilsToBill} stencils`);
+            } else {
+              // No billing, but still update last seen totals
+              if (lastSeen) {
+                await tx.update(risoLastSeenTotals)
+                  .set({
+                    lastSeenCopies: risoUser.totalCopies,
+                    lastSeenStencils: risoUser.masterCount,
+                    lastReportDate: reportTimestamp,
+                    updatedAt: new Date()
+                  })
+                  .where(eq(risoLastSeenTotals.userId, userId));
+              } else {
+                await tx.insert(risoLastSeenTotals).values({
+                  userId,
+                  lastSeenCopies: risoUser.totalCopies,
+                  lastSeenStencils: risoUser.masterCount,
+                  cumulativeCopiesBilled: 0,
+                  cumulativeStencilsBilled: 0,
+                  lastReportDate: reportTimestamp,
+                  updatedAt: new Date()
+                });
+              }
+            }
           });
-
-          const lastSeenCopies = lastSeen?.lastSeenCopies || 0;
-          const lastSeenStencils = lastSeen?.lastSeenStencils || 0;
-          const cumulativeCopiesBilled = lastSeen?.cumulativeCopiesBilled || 0;
-          const cumulativeStencilsBilled = lastSeen?.cumulativeStencilsBilled || 0;
-
-          let copiesToBill = 0;
-          let stencilsToBill = 0;
-
-          // Check for counter reset
-          if (risoUser.totalCopies < lastSeenCopies || risoUser.masterCount < lastSeenStencils) {
-            // RESET DETECTED!
-            resetsDetected.push(`${risoUser.userName}: copies ${lastSeenCopies} → ${risoUser.totalCopies}, stencils ${lastSeenStencils} → ${risoUser.masterCount}`);
-
-            // Bill for unbilled pre-reset usage
-            const preResetUnbilledCopies = Math.max(0, lastSeenCopies - cumulativeCopiesBilled);
-            const preResetUnbilledStencils = Math.max(0, lastSeenStencils - cumulativeStencilsBilled);
-
-            // Bill for post-reset usage (current totals)
-            copiesToBill = preResetUnbilledCopies + risoUser.totalCopies;
-            stencilsToBill = preResetUnbilledStencils + risoUser.masterCount;
-
-            console.log(`Reset detected for ${risoUser.userName}: billing ${preResetUnbilledCopies} pre-reset + ${risoUser.totalCopies} post-reset copies`);
-          } else {
-            // Normal case: counter increased
-            const incrementalCopies = risoUser.totalCopies - lastSeenCopies;
-            const incrementalStencils = risoUser.masterCount - lastSeenStencils;
-
-            copiesToBill = incrementalCopies;
-            stencilsToBill = incrementalStencils;
-          }
-
-          // Only process if there's something to bill
-          if (copiesToBill > 0 || stencilsToBill > 0) {
-            // Insert usage record
-            await db.insert(risographUsages).values({
-              userId,
-              copiesPrinted: copiesToBill,
-              stencilsCreated: stencilsToBill,
-              timestamp: new Date(`${risoData.date} ${risoData.time}`),
-              rawData: `Model: ${risoData.model}, Serial: ${risoData.serial}, User: ${risoUser.userName}`
-            });
-
-            // Create billing transaction
-            await billingService.createUsageTransaction(
-              userId,
-              copiesToBill,
-              stencilsToBill
-            );
-
-            console.log(`Billed ${risoUser.userName}: ${copiesToBill} copies, ${stencilsToBill} stencils`);
-          }
-
-          // Update last seen totals and cumulative billed
-          const newCumulativeCopies = (lastSeen ? cumulativeCopiesBilled : 0) + copiesToBill;
-          const newCumulativeStencils = (lastSeen ? cumulativeStencilsBilled : 0) + stencilsToBill;
-
-          if (lastSeen) {
-            await db.update(risoLastSeenTotals)
-              .set({
-                lastSeenCopies: risoUser.totalCopies,
-                lastSeenStencils: risoUser.masterCount,
-                cumulativeCopiesBilled: newCumulativeCopies,
-                cumulativeStencilsBilled: newCumulativeStencils,
-                lastReportDate: new Date(`${risoData.date} ${risoData.time}`),
-                updatedAt: new Date()
-              })
-              .where(eq(risoLastSeenTotals.userId, userId));
-          } else {
-            await db.insert(risoLastSeenTotals).values({
-              userId,
-              lastSeenCopies: risoUser.totalCopies,
-              lastSeenStencils: risoUser.masterCount,
-              cumulativeCopiesBilled: newCumulativeCopies,
-              cumulativeStencilsBilled: newCumulativeStencils,
-              lastReportDate: new Date(`${risoData.date} ${risoData.time}`),
-              updatedAt: new Date()
-            });
-          }
 
           processed++;
         } catch (error) {

@@ -36,7 +36,7 @@ export class BillingService {
     };
   }
 
-  async createUsageTransaction(userId: number, copiesPrinted: number, stencilsCreated: number): Promise<void> {
+  async createUsageTransaction(userId: number, copiesPrinted: number, stencilsCreated: number, tx?: { insert: typeof db.insert }): Promise<void> {
     const charges = this.calculateUsageCharges(copiesPrinted, stencilsCreated);
 
     if (charges.totalChargesCents <= 0) {
@@ -46,7 +46,8 @@ export class BillingService {
     const note = `Usage charges: ${copiesPrinted} copies ($${(charges.copyChargesCents / 100).toFixed(2)}), ${stencilsCreated} stencils ($${(charges.stencilChargesCents / 100).toFixed(2)})`;
 
     // Insert negative transaction (debit) - the existing trigger will update the balance automatically
-    await db.insert(creditTransactions).values({
+    const conn = tx || db;
+    await conn.insert(creditTransactions).values({
       userId,
       amountCents: -charges.totalChargesCents, // Negative because it's a charge/debit
       currency: 'USD',
