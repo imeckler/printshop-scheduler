@@ -636,7 +636,7 @@ server.get('/logout', async (request, reply) => {
 
 const SendVerificationSchema = {
   body: Type.Object({
-    phoneNumber: Type.String({ minLength: 1, pattern: '^\\+[1-9][0-9]{7,15}$' }),
+    phoneNumber: Type.String({ minLength: 1, pattern: '^\\+1[2-9][0-9]{9}$' }),
   }),
   response: {
     200: Type.Object({
@@ -655,7 +655,7 @@ const SendVerificationSchema = {
 
 const CheckVerificationSchema = {
   body: Type.Object({
-    phoneNumber: Type.String({ minLength: 1, pattern: '^\\+[1-9][0-9]{7,15}$' }),
+    phoneNumber: Type.String({ minLength: 1, pattern: '^\\+1[2-9][0-9]{9}$' }),
     code: Type.String({ minLength: 4, maxLength: 10 }),
   }),
   response: {

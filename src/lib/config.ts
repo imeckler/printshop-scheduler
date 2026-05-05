@@ -71,7 +71,6 @@ const configFromEnv = (): AppConfig => {
       messaging_service_sid: required('TWILIO_MESSAGING_SERVICE_SID'),
       phone_number: required('TWILIO_PHONE_NUMBER'),
     };
-    console.log('config from env twilio', config.twilio);
   }
 
   if (process.env.RISO_ADMIN_URL) {
@@ -99,7 +98,6 @@ export const getConfig = (): AppConfig => {
 
     return config;
   } catch {
-    console.log('config from env');
     return configFromEnv();
   }
 };
