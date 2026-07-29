@@ -8,14 +8,13 @@ import { users } from './schema';
 
 const config = getConfig();
 
-
 export type AdminTokenPayload = {
   type: 'admin';
   iat: number;
   exp: number;
 };
 
-export function generateAdminToken() : string {
+export function generateAdminToken(): string {
   const jwtSecret = config.jwt.secret;
   const payload: Omit<AdminTokenPayload, 'iat' | 'exp'> = {
     type: 'admin',
@@ -23,17 +22,16 @@ export function generateAdminToken() : string {
   return jwt.sign(payload, jwtSecret, { expiresIn: '7d' });
 }
 
-export function verifyAdminToken(token: string) : boolean {
+export function verifyAdminToken(token: string): boolean {
   try {
     const jwtSecret = config.jwt.secret;
     const decoded = jwt.verify(token, jwtSecret) as AdminTokenPayload;
-    return (decoded.type === 'admin');
+    return decoded.type === 'admin';
   } catch (error) {
     console.error('Error verifying admin token:', error);
     return false;
   }
 }
-
 
 export function getVerifiedPhoneFromRequest(req: FastifyRequest): string | null {
   // Get the verification token from the request

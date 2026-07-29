@@ -39,6 +39,7 @@
     "moment-timezone": "^0.6.0",
     "pg": "^8.16.0",
     "puppeteer": "^24.16.1",
+    "rrule": "^2.8.1",
     "stripe": "^18.2.1",
     "toml": "^3.0.0",
     "twilio": "^5.7.1",

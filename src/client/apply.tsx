@@ -18,7 +18,7 @@ class ApplicationManager {
 
   private setupEventListeners(): void {
     this.form.addEventListener('submit', this.handleSubmit.bind(this));
-    
+
     // Add phone number formatting
     const phoneInputs = this.form.querySelectorAll('input[type="tel"]');
     phoneInputs.forEach(input => {
@@ -29,7 +29,7 @@ class ApplicationManager {
   private formatPhoneNumber(event: Event): void {
     const input = event.target as HTMLInputElement;
     let value = input.value.replace(/\D/g, ''); // Remove non-digits
-    
+
     // Add + prefix if not present
     if (value && !input.value.startsWith('+')) {
       input.value = '+' + value;
@@ -38,7 +38,7 @@ class ApplicationManager {
 
   private async handleSubmit(event: Event): Promise<void> {
     event.preventDefault();
-    
+
     this.submitBtn.disabled = true;
     this.submitBtn.textContent = 'Submitting...';
 
@@ -90,11 +90,7 @@ class ApplicationManager {
     existingAlerts.forEach(alert => alert.remove());
 
     // Create new error alert
-    const errorAlert = (
-      <div className="alert alert-danger">
-        {message}
-      </div>
-    );
+    const errorAlert = <div className="alert alert-danger">{message}</div>;
 
     const container = document.querySelector('.container');
     const h2 = container?.querySelector('h2');

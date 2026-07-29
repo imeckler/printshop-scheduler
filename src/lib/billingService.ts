@@ -32,11 +32,16 @@ export class BillingService {
       stencilsCreated,
       copyChargesCents,
       stencilChargesCents,
-      totalChargesCents
+      totalChargesCents,
     };
   }
 
-  async createUsageTransaction(userId: number, copiesPrinted: number, stencilsCreated: number, tx?: { insert: typeof db.insert }): Promise<void> {
+  async createUsageTransaction(
+    userId: number,
+    copiesPrinted: number,
+    stencilsCreated: number,
+    tx?: { insert: typeof db.insert }
+  ): Promise<void> {
     const charges = this.calculateUsageCharges(copiesPrinted, stencilsCreated);
 
     if (charges.totalChargesCents <= 0) {
@@ -52,28 +57,33 @@ export class BillingService {
       amountCents: -charges.totalChargesCents, // Negative because it's a charge/debit
       currency: 'USD',
       kind: 'usage_charge',
-      note
+      note,
     });
   }
 
   async getUserAccountBalance(userId: number): Promise<number> {
     const balance = await db.query.creditBalances.findFirst({
-      where: eq(creditBalances.userId, userId)
+      where: eq(creditBalances.userId, userId),
     });
 
     return balance?.balanceCents || 0;
   }
 
-  async getRecentUsageForUser(userId: number, limit: number = 20): Promise<Array<{
-    timestamp: Date;
-    copiesPrinted: number;
-    stencilsCreated: number;
-    chargeCents: number;
-  }>> {
+  async getRecentUsageForUser(
+    userId: number,
+    limit: number = 20
+  ): Promise<
+    Array<{
+      timestamp: Date;
+      copiesPrinted: number;
+      stencilsCreated: number;
+      chargeCents: number;
+    }>
+  > {
     const recentUsages = await db.query.risographUsages.findMany({
       where: eq(risographUsages.userId, userId),
       orderBy: desc(risographUsages.timestamp),
-      limit
+      limit,
     });
 
     return recentUsages.map(usage => {
@@ -82,7 +92,7 @@ export class BillingService {
         timestamp: usage.timestamp,
         copiesPrinted: usage.copiesPrinted,
         stencilsCreated: usage.stencilsCreated,
-        chargeCents: charges.totalChargesCents
+        chargeCents: charges.totalChargesCents,
       };
     });
   }
@@ -90,7 +100,7 @@ export class BillingService {
   getPricing(): { copyPriceCents: number; stencilPriceCents: number } {
     return {
       copyPriceCents: this.copyPriceCents,
-      stencilPriceCents: this.stencilPriceCents
+      stencilPriceCents: this.stencilPriceCents,
     };
   }
 }
@@ -99,7 +109,7 @@ export class BillingService {
 export async function mapRisoUserToDbUser(risoUserIdentifier: string): Promise<number | null> {
   // Look up by RISO username only
   const user = await db.query.users.findFirst({
-    where: eq(users.risoUsername, risoUserIdentifier)
+    where: eq(users.risoUsername, risoUserIdentifier),
   });
 
   return user?.userId || null;

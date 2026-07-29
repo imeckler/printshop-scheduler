@@ -24,10 +24,11 @@ CREATE TRIGGER credit_balance_tg
 AFTER INSERT ON credit_transactions
 FOR EACH ROW EXECUTE FUNCTION credit_balance_upkeep();
 
--- Add the GIST exclusion constraints that Drizzle doesn't support
-ALTER TABLE bookings ADD CONSTRAINT no_overlap_per_unit
-    EXCLUDE USING gist (unit_id WITH =, slot WITH &&);
-
+-- Add the GIST exclusion constraints that Drizzle doesn't support.
+-- Note: bookings deliberately has no exclusion constraint — overlap/capacity
+-- for event timeslots is enforced app-side (see src/lib/events.ts), and
+-- drizzle/0005_events_backfill.sql drops the old no_overlap_per_unit
+-- constraint on existing databases.
 ALTER TABLE blackouts ADD CONSTRAINT blackout_no_overlap
     EXCLUDE USING gist (unit_id WITH =, period WITH &&);
 

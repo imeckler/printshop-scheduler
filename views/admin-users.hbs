@@ -29,6 +29,8 @@
                         <th>RISO Username</th>
                         <th>Approved</th>
                         <th>Trained</th>
+                        <th>Printshop</th>
+                        <th>Event Creator</th>
                         <th>Joined</th>
                         <th>Actions</th>
                     </tr>
@@ -57,9 +59,19 @@
                                 {{#if trained}}✅ Yes{{else}}❌ No{{/if}}
                             </span>
                         </td>
+                        <td>
+                            <span class="status-badge {{#if printshop}}approved{{else}}pending{{/if}}">
+                                {{#if printshop}}✅ Yes{{else}}❌ No{{/if}}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="status-badge {{#if eventCreator}}approved{{else}}pending{{/if}}">
+                                {{#if eventCreator}}✅ Yes{{else}}❌ No{{/if}}
+                            </span>
+                        </td>
                         <td>{{formatDate createdAt}}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}})">
+                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}}, {{printshop}}, {{eventCreator}})">
                                 Edit
                             </button>
                         </td>
@@ -104,7 +116,21 @@
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="modalTrained" name="trained">
-                        Trained (can make bookings)
+                        Trained (completed equipment training)
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="modalPrintshop" name="printshop">
+                        Printshop (can book printshop slots)
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="modalEventCreator" name="eventCreator">
+                        Event creator (can create events via the API)
                     </label>
                 </div>
             </div>
@@ -317,11 +343,13 @@
 </style>
 
 <script>
-function openEditModal(userId, userName, risoUsername, approved, trained) {
+function openEditModal(userId, userName, risoUsername, approved, trained, printshop, eventCreator) {
     document.getElementById('modalUserName').textContent = userName;
     document.getElementById('modalRisoUsername').value = risoUsername || '';
     document.getElementById('modalApproved').checked = approved;
     document.getElementById('modalTrained').checked = trained;
+    document.getElementById('modalPrintshop').checked = printshop;
+    document.getElementById('modalEventCreator').checked = eventCreator;
     document.getElementById('editForm').action = `/admin/users/${userId}/update`;
     document.getElementById('editModal').style.display = 'block';
 }

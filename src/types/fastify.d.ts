@@ -8,4 +8,3 @@ declare module 'fastify' {
     user: User | null;
   }
 }
-

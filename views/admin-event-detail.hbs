@@ -1,0 +1,179 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>{{event.name}}</h2>
+        <div>
+            <a href="/admin/events" class="btn btn-secondary">← All Events</a>
+            <form method="POST" action="/admin/logout" style="display: inline;">
+                <button type="submit" class="btn btn-secondary">Logout</button>
+            </form>
+        </div>
+    </div>
+
+    {{#if success}}
+        <div class="alert alert-success">{{success}}</div>
+    {{/if}}
+
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+
+    <div class="detail-card">
+        <table class="detail-table">
+            {{#if event.description}}
+            <tr><td><strong>Description:</strong></td><td>{{event.description}}</td></tr>
+            {{/if}}
+            <tr><td><strong>Schedule:</strong></td><td>{{event.schedule}}</td></tr>
+            <tr><td><strong>Status:</strong></td>
+                <td>
+                    <span class="status-badge {{#if (eq event.status "active")}}approved{{else}}pending{{/if}}">
+                        {{event.status}}
+                    </span>
+                </td>
+            </tr>
+            <tr><td><strong>Created:</strong></td><td>{{formatDateTime event.createdAt}}</td></tr>
+        </table>
+
+        {{#if (eq event.status "active")}}
+        <form method="POST" action="/admin/events/{{event.eventId}}/cancel"
+              onsubmit="return confirm('Cancel this entire event? All upcoming occurrences will be cancelled.')">
+            <button type="submit" class="btn btn-danger">Cancel Entire Event</button>
+        </form>
+        {{/if}}
+    </div>
+
+    <div class="detail-card">
+        <h3>Permitted Users ({{permittedUsers.length}})</h3>
+        {{#if permittedUsers.length}}
+            <table class="table">
+                <thead>
+                    <tr><th>Name</th><th>Phone</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {{#each permittedUsers}}
+                    <tr>
+                        <td>{{this.name}}</td>
+                        <td>{{this.phoneE164}}</td>
+                        <td>
+                            <form method="POST" action="/admin/events/{{../event.eventId}}/permissions/remove"
+                                  onsubmit="return confirm('Remove this user from the event?')">
+                                <input type="hidden" name="userId" value="{{this.userId}}">
+                                <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        {{else}}
+            <p class="no-data">No users permissioned yet.</p>
+        {{/if}}
+
+        {{#if addableUsers.length}}
+            <form method="POST" action="/admin/events/{{event.eventId}}/permissions/add" class="add-user-form">
+                <select name="userId" class="form-input" required>
+                    <option value="">— Select a user —</option>
+                    {{#each addableUsers}}
+                        <option value="{{this.userId}}">{{#if this.name}}{{this.name}} ({{this.phoneE164}}){{else}}{{this.phoneE164}}{{/if}}</option>
+                    {{/each}}
+                </select>
+                <button type="submit" class="btn btn-primary">Add User</button>
+            </form>
+        {{/if}}
+    </div>
+
+    <div class="detail-card">
+        <h3>Upcoming Occurrences</h3>
+        {{#if occurrences.length}}
+            <table class="table">
+                <thead>
+                    <tr><th>Date & Time</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {{#each occurrences}}
+                    <tr>
+                        <td>{{formatSlot this.slot}}</td>
+                        <td>
+                            <span class="status-badge {{#if (eq this.status "confirmed")}}approved{{else}}pending{{/if}}">
+                                {{this.status}}
+                            </span>
+                        </td>
+                        <td>
+                            {{#if (eq this.status "confirmed")}}
+                            <form method="POST" action="/admin/events/{{../event.eventId}}/occurrences/{{this.timeslotId}}/cancel"
+                                  onsubmit="return confirm('Cancel this occurrence?')">
+                                <button type="submit" class="btn btn-sm btn-danger">Cancel</button>
+                            </form>
+                            {{/if}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        {{else}}
+            <p class="no-data">No upcoming occurrences.</p>
+        {{/if}}
+    </div>
+</div>
+
+<style>
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+.admin-header div { display: flex; gap: 1rem; }
+.detail-card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    padding: 20px;
+    margin-bottom: 1.5rem;
+}
+.detail-table td { padding: 6px 12px 6px 0; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+.table th { background-color: #f8f9fa; font-weight: 600; color: #495057; }
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.status-badge.approved { background-color: #d4edda; color: #155724; }
+.status-badge.pending { background-color: #f8d7da; color: #721c24; }
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+}
+.btn-primary { background-color: #007bff; color: white; }
+.btn-secondary { background-color: #6c757d; color: white; }
+.btn-danger { background-color: #dc3545; color: white; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.alert { padding: 12px; border-radius: 4px; margin-bottom: 1rem; }
+.alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f1b0b7; }
+.form-input {
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 14px;
+}
+.add-user-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 1rem;
+}
+.no-data { padding: 1rem 0; color: #6c757d; }
+</style>

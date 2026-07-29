@@ -29,7 +29,7 @@ class CreditManager {
 
   private handleAmountChange(): void {
     const amount = parseFloat(this.amountInput.value);
-    
+
     if (isNaN(amount) || amount < 5) {
       this.feeBreakdown.style.display = 'none';
       this.addCreditsBtn.disabled = true;
@@ -54,7 +54,7 @@ class CreditManager {
 
   private async handleAddCredits(): Promise<void> {
     const amount = parseFloat(this.amountInput.value);
-    
+
     if (isNaN(amount) || amount < 5) {
       alert('Please enter a valid amount (minimum $5)');
       return;
@@ -91,7 +91,6 @@ class CreditManager {
 
       const { url } = await response.json();
       window.location.href = url;
-
     } catch (error) {
       console.error('Payment error:', error);
       alert('Failed to process payment. Please try again.');

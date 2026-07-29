@@ -64,21 +64,21 @@ export interface AvailableSlotsErrorResponse {
 
 // Booking types
 export interface BookingDensityRequest {
-  unitId: number,
-  start: string,
-  end: string,
+  unitId: number;
+  start: string;
+  end: string;
 }
 
 export interface BookingDensityResponse {
-  intervals: { startTime: string, endTime: string, bookedCount: number }[],
-  totalCapacity: number,
-  requestedRange: { start: number, end: number },
+  intervals: { startTime: string; endTime: string; bookedCount: number }[];
+  totalCapacity: number;
+  requestedRange: { start: number; end: number };
 }
 
 export interface BookCustomRangeRequest {
-  unitId: number,
-  start: string,
-  end: string,
+  unitId: number;
+  start: string;
+  end: string;
 }
 
 export interface BookSlotRequest {

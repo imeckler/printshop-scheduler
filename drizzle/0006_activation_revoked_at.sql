@@ -1,0 +1,1 @@
+ALTER TABLE "lock_activations" ADD COLUMN "revoked_at" timestamp with time zone;

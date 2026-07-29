@@ -10,9 +10,9 @@ class ApplicationReviewManager {
 
   private setupEventListeners(): void {
     // Handle approve/reject button clicks
-    document.addEventListener('click', (event) => {
+    document.addEventListener('click', event => {
       const target = event.target as HTMLElement;
-      
+
       if (target.classList.contains('approve-btn') || target.classList.contains('reject-btn')) {
         event.preventDefault();
         this.handleReviewAction(target);
@@ -24,7 +24,9 @@ class ApplicationReviewManager {
     const action = button.dataset.action as 'approve' | 'reject';
     const form = button.closest('.review-form') as HTMLFormElement;
     const applicationId = parseInt(form.dataset.applicationId!);
-    const reviewNotesTextarea = form.querySelector('textarea[name="reviewNotes"]') as HTMLTextAreaElement;
+    const reviewNotesTextarea = form.querySelector(
+      'textarea[name="reviewNotes"]'
+    ) as HTMLTextAreaElement;
     const reviewNotes = reviewNotesTextarea.value.trim();
 
     // Disable all buttons in this form
@@ -119,11 +121,7 @@ class ApplicationReviewManager {
     existingAlerts.forEach(alert => alert.remove());
 
     // Create new alert
-    const alertEl = (
-      <div className={`alert alert-${type}`}>
-        {message}
-      </div>
-    );
+    const alertEl = <div className={`alert alert-${type}`}>{message}</div>;
 
     const container = document.querySelector('.container');
     const h2 = container?.querySelector('h2');

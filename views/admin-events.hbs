@@ -1,0 +1,307 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Manage Events</h2>
+        <div>
+            <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            <form method="POST" action="/admin/logout" style="display: inline;">
+                <button type="submit" class="btn btn-secondary">Logout</button>
+            </form>
+        </div>
+    </div>
+
+    {{#if success}}
+        <div class="alert alert-success">{{success}}</div>
+    {{/if}}
+
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{/if}}
+
+    <div class="events-section">
+        <div class="section-header">
+            <h3>Events</h3>
+            {{#if showingAll}}
+                <a href="/admin/events" class="btn btn-sm btn-secondary">Hide printshop bookings</a>
+            {{else}}
+                <a href="/admin/events?all=1" class="btn btn-sm btn-secondary">Show printshop bookings</a>
+            {{/if}}
+        </div>
+        {{#if events.length}}
+            <div class="events-table">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Schedule</th>
+                            <th>Next Occurrence</th>
+                            <th>Users</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{#each events}}
+                        <tr>
+                            <td><a href="/admin/events/{{this.eventId}}">{{this.name}}</a></td>
+                            <td>{{this.schedule}}</td>
+                            <td>
+                                {{#if this.nextOccurrence}}
+                                    {{formatDateTime this.nextOccurrence}}
+                                {{else}}
+                                    <span class="text-muted">None upcoming</span>
+                                {{/if}}
+                            </td>
+                            <td>{{this.userCount}}</td>
+                            <td>
+                                <span class="status-badge {{#if (eq this.status "active")}}approved{{else}}pending{{/if}}">
+                                    {{this.status}}
+                                </span>
+                            </td>
+                            <td>
+                                <a href="/admin/events/{{this.eventId}}" class="btn btn-sm btn-primary">Manage</a>
+                            </td>
+                        </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <p class="no-data">No events yet.</p>
+        {{/if}}
+    </div>
+
+    <div class="create-section">
+        <h3>Create Event</h3>
+        <form method="POST" action="/admin/events" class="create-form">
+            <div class="form-group">
+                <label for="name">Name</label>
+                <input type="text" id="name" name="name" class="form-input" required maxlength="200">
+            </div>
+
+            <div class="form-group">
+                <label for="description">Description (optional)</label>
+                <textarea id="description" name="description" class="form-input" rows="2" maxlength="2000"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Schedule type</label>
+                <label class="radio-label">
+                    <input type="radio" name="scheduleType" value="finite" checked onchange="toggleScheduleType()">
+                    Fixed list of timeslots
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="scheduleType" value="recurring" onchange="toggleScheduleType()">
+                    Recurring
+                </label>
+            </div>
+
+            <fieldset id="finiteFields" class="schedule-fieldset">
+                <legend>Timeslots</legend>
+                <div id="slotRows">
+                    <div class="slot-row">
+                        <input type="date" name="slotDate" class="form-input">
+                        <input type="time" name="slotStart" class="form-input">
+                        <span>to</span>
+                        <input type="time" name="slotEnd" class="form-input">
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="addSlotRow()">+ Add another slot</button>
+            </fieldset>
+
+            <fieldset id="recurringFields" class="schedule-fieldset" style="display: none;">
+                <legend>Recurrence</legend>
+
+                <div class="form-row">
+                    <label>Repeats
+                        <select name="freq" class="form-input" onchange="toggleMonthlyFields()">
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </label>
+                    <label>Every
+                        <input type="number" name="interval" class="form-input interval-input" value="1" min="1" max="12">
+                        <span id="intervalUnit">week(s)</span>
+                    </label>
+                </div>
+
+                <div class="form-row" id="monthlyModeRow" style="display: none;">
+                    <label class="radio-label">
+                        <input type="radio" name="monthlyMode" value="nth" checked onchange="toggleMonthlyFields()">
+                        The
+                        <select name="nth" class="form-input">
+                            <option value="1">1st</option>
+                            <option value="2">2nd</option>
+                            <option value="3">3rd</option>
+                            <option value="4">4th</option>
+                            <option value="5">5th</option>
+                        </select>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="monthlyMode" value="last" onchange="toggleMonthlyFields()">
+                        The last
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <label>Day
+                        <select name="weekday" class="form-input">
+                            <option value="0">Monday</option>
+                            <option value="1">Tuesday</option>
+                            <option value="2">Wednesday</option>
+                            <option value="3">Thursday</option>
+                            <option value="4">Friday</option>
+                            <option value="5">Saturday</option>
+                            <option value="6">Sunday</option>
+                        </select>
+                    </label>
+                    <label>From
+                        <input type="time" name="startTime" class="form-input">
+                    </label>
+                    <label>To
+                        <input type="time" name="endTime" class="form-input">
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <label>Starting on
+                        <input type="date" name="startDate" class="form-input">
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <label>Ends
+                        <select name="ends" class="form-input" onchange="toggleEndsFields()">
+                            <option value="never">Never</option>
+                            <option value="until">On date</option>
+                            <option value="count">After N occurrences</option>
+                        </select>
+                    </label>
+                    <label id="untilField" style="display: none;">End date
+                        <input type="date" name="untilDate" class="form-input">
+                    </label>
+                    <label id="countField" style="display: none;">Occurrences
+                        <input type="number" name="count" class="form-input interval-input" min="1" max="500">
+                    </label>
+                </div>
+            </fieldset>
+
+            <button type="submit" class="btn btn-primary">Create Event</button>
+        </form>
+    </div>
+</div>
+
+<style>
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+}
+.admin-header div { display: flex; gap: 1rem; }
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.events-table, .create-section {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.create-section { margin-top: 2rem; padding: 20px; overflow: visible; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+.table th { background-color: #f8f9fa; font-weight: 600; color: #495057; }
+.table tr:hover { background-color: #f8f9fa; }
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.status-badge.approved { background-color: #d4edda; color: #155724; }
+.status-badge.pending { background-color: #f8d7da; color: #721c24; }
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+}
+.btn-primary { background-color: #007bff; color: white; }
+.btn-secondary { background-color: #6c757d; color: white; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.alert { padding: 12px; border-radius: 4px; margin-bottom: 1rem; }
+.alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f1b0b7; }
+.form-group { margin-bottom: 15px; }
+.form-group > label { display: block; margin-bottom: 4px; font-weight: 500; }
+.radio-label { display: inline-flex !important; align-items: center; gap: 6px; margin-right: 16px; font-weight: normal !important; }
+.form-input {
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 14px;
+}
+textarea.form-input, input[type="text"].form-input { width: 100%; }
+.interval-input { width: 70px; }
+.schedule-fieldset {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+.schedule-fieldset legend { padding: 0 8px; font-weight: 600; }
+.form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.form-row label { display: inline-flex; align-items: center; gap: 8px; }
+.slot-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.text-muted { color: #6c757d; font-style: italic; }
+.no-data { text-align: center; padding: 2rem; color: #6c757d; }
+</style>
+
+<script>
+function toggleScheduleType() {
+    const recurring = document.querySelector('input[name="scheduleType"][value="recurring"]').checked;
+    document.getElementById('finiteFields').style.display = recurring ? 'none' : 'block';
+    document.getElementById('recurringFields').style.display = recurring ? 'block' : 'none';
+}
+
+function toggleMonthlyFields() {
+    const monthly = document.querySelector('select[name="freq"]').value === 'monthly';
+    document.getElementById('monthlyModeRow').style.display = monthly ? 'flex' : 'none';
+    document.getElementById('intervalUnit').textContent = monthly ? 'month(s)' : 'week(s)';
+}
+
+function toggleEndsFields() {
+    const ends = document.querySelector('select[name="ends"]').value;
+    document.getElementById('untilField').style.display = ends === 'until' ? 'inline-flex' : 'none';
+    document.getElementById('countField').style.display = ends === 'count' ? 'inline-flex' : 'none';
+}
+
+function addSlotRow() {
+    const rows = document.getElementById('slotRows');
+    const row = rows.querySelector('.slot-row').cloneNode(true);
+    row.querySelectorAll('input').forEach(i => i.value = '');
+    rows.appendChild(row);
+}
+</script>

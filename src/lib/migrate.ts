@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import { getConfig } from './config';
+import { sslForUrl } from './sslConfig';
 import * as schema from './schema';
 import { ensureSeedData } from './seedData';
 import fs from 'fs';
@@ -12,14 +13,14 @@ const config = getConfig();
 export async function runMigrations() {
   const pool = new Pool({
     connectionString: config.database.postgresql_url,
-    ssl: { rejectUnauthorized: false },
+    ssl: sslForUrl(config.database.postgresql_url),
   });
 
   const db = drizzle(pool, { schema });
 
   try {
     console.log('Running Drizzle migrations...');
-    
+
     // Run Drizzle migrations
     await migrate(db, { migrationsFolder: './drizzle' });
 
@@ -48,7 +49,6 @@ export async function runMigrations() {
     await pool.end();
   }
 }
-
 
 async function checkTriggerExists(pool: Pool): Promise<boolean> {
   try {

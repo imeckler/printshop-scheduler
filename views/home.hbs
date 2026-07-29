@@ -1,46 +1,105 @@
 <div class="container">
     {{#if user}}
-        <h2>Your door/RISO code is {{user.code}}. It only works during your booked times.</h2>
-        
+        <h2>Your door/RISO code is {{user.code}}. Activate the lock below when you arrive.</h2>
+
+        {{#if activationSuccess}}
+            <div class="alert alert-success">Lock activated — your code {{user.code}} works until the end of your current slot.</div>
+        {{/if}}
+        {{#if activationError}}
+            <div class="alert alert-error">{{activationError}}</div>
+        {{/if}}
+
+        {{#if activatable}}
+            <div class="activate-lock">
+                {{#if activatable.activated}}
+                    <p class="activated-note">
+                        Lock activated for <strong>{{activatable.eventName}}</strong> — your code
+                        {{user.code}} works until {{formatDateTime activatable.accessStop}}.
+                    </p>
+                {{else}}
+                    <form method="POST" action="/activate-lock">
+                        <button type="submit" class="btn btn-primary btn-activate">
+                            Activate lock for {{activatable.eventName}}
+                        </button>
+                    </form>
+                    <p class="activate-note">Puts your code {{user.code}} on the door lock until {{formatDateTime activatable.accessStop}}.</p>
+                {{/if}}
+            </div>
+        {{/if}}
+
         <div class="btn-group">
-            <a href="/book" class="btn btn-primary">Book a Slot</a>
+            {{#if user.printshop}}
+                <a href="/book" class="btn btn-primary">Book a Slot</a>
+            {{/if}}
             <a href="/credits" class="btn">My Credits</a>
         </div>
 
-        {{#if upcomingBookings}}
-            <h3>Your Upcoming Bookings</h3>
+        {{#if occurrences}}
+            <h3>Your Upcoming Events</h3>
             <table>
                 <thead>
                     <tr>
                         <th>Date & Time</th>
-                        <th>Unit</th>
-                        <th>Status</th>
+                        <th>Event</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {{#each upcomingBookings}}
+                    {{#each occurrences}}
                     <tr>
                         <td data-label="Date & Time">{{formatSlot this.slot}}</td>
-                        <td data-label="Unit">{{this.unit.name}}</td>
-                        <td data-label="Status">{{this.status}}</td>
+                        <td data-label="Event">{{this.eventName}}</td>
                         <td data-label="Actions">
-                          <a href="/cancel-booking/{{this.bookingId}}" 
-                              class="btn btn-sm btn-danger" 
-                              onclick="return confirm('Are you sure you want to cancel this booking?')">
+                          {{#if this.cancellable}}
+                          <a href="/cancel-booking/{{this.timeslotId}}"
+                              class="btn btn-sm btn-danger">
                               Cancel
                           </a>
+                          {{/if}}
                         </td>
                     </tr>
                     {{/each}}
                 </tbody>
             </table>
         {{else}}
-            <p>You don't have any upcoming bookings.</p>
+            <p>You don't have any upcoming events.</p>
         {{/if}}
     {{else}}
         <div class="btn-group">
-            <a href="/login" class="btn btn-primary">Login to Book a slot at the printshop</a>
+            <a href="/login" class="btn btn-primary">Login to access the space</a>
         </div>
     {{/if}}
 </div>
+
+<style>
+.activate-lock {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    border: 2px solid #2e7d32;
+    border-radius: 8px;
+    background: #f0f7f0;
+}
+.btn-activate {
+    font-size: 1.2rem;
+    padding: 0.75rem 1.5rem;
+}
+.activate-note, .activated-note {
+    margin: 0.5rem 0 0;
+    color: #2e7d32;
+}
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin: 1rem 0;
+}
+.alert-success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+.alert-error {
+    background: #fdecea;
+    color: #b71c1c;
+    border: 1px solid #ef9a9a;
+}
+</style>

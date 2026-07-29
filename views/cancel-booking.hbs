@@ -1,6 +1,6 @@
 <div class="container">
     <h2>Cancel Booking</h2>
-    
+
     {{#if booking}}
         <div class="booking-details">
             <h3>Booking Details</h3>
@@ -10,30 +10,25 @@
                     <td>{{formatSlot booking.slot}}</td>
                 </tr>
                 <tr>
-                    <td><strong>Unit:</strong></td>
-                    <td>{{booking.unit.name}}</td>
+                    <td><strong>Event:</strong></td>
+                    <td>{{booking.eventName}}</td>
                 </tr>
             </table>
         </div>
-        
-        {{#if (eq booking.status "confirmed")}}
-            <div class="cancel-section">
-                <p class="warning">Are you sure you want to cancel this booking? This action cannot be undone.</p>
-                
-                <form method="POST" action="/cancel-booking/{{booking.bookingId}}">
-                    <div class="btn-group">
-                        <button type="submit" class="btn btn-danger">Yes, Cancel Booking</button>
-                        <a href="/my-bookings" class="btn">No, Keep Booking</a>
-                    </div>
-                </form>
-            </div>
-        {{else}}
-            <p>This booking cannot be cancelled as it is {{booking.status}}.</p>
-            <a href="/my-bookings" class="btn">Back to My Bookings</a>
-        {{/if}}
+
+        <div class="cancel-section">
+            <p class="warning">Are you sure you want to cancel this booking? This action cannot be undone.</p>
+
+            <form method="POST" action="/cancel-booking/{{booking.timeslotId}}">
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-danger">Yes, Cancel Booking</button>
+                    <a href="/my-bookings" class="btn">No, Keep Booking</a>
+                </div>
+            </form>
+        </div>
     {{else}}
         <div class="error">
-            <p>Booking not found or you don't have permission to cancel this booking.</p>
+            <p>Booking not found, already cancelled, or you don't have permission to cancel it.</p>
             <a href="/my-bookings" class="btn">Back to My Bookings</a>
         </div>
     {{/if}}

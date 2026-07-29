@@ -4,9 +4,11 @@ import { jsx, Fragment } from 'hono/jsx/dom';
 import { render } from 'hono/jsx/dom';
 import { isSuccessResponse } from './apiClient';
 import moment from 'moment-timezone';
-import { BookCustomRangeRequest, BookingDensityResponse,
-  BookingDensityRequest } from '../lib/apiTypes';
-
+import {
+  BookCustomRangeRequest,
+  BookingDensityResponse,
+  BookingDensityRequest,
+} from '../lib/apiTypes';
 
 interface Unit {
   unitId: number;
@@ -31,7 +33,7 @@ class BookingManager {
   private selectedRangeDisplay: HTMLElement;
   private confirmButton: HTMLButtonElement;
   private clearButton: HTMLButtonElement;
-  
+
   private units: Unit[] = [];
   private timeSlots: TimeSlot[] = [];
   private selectedStartIndex: number | null = null;
@@ -82,7 +84,11 @@ class BookingManager {
   private populateUnitOptions(): void {
     this.unitSelect.innerHTML = '';
     this.units.forEach(unit => {
-      const option = <option value={unit.unitId.toString()}>{unit.name} (Capacity: {unit.capacity})</option>;
+      const option = (
+        <option value={unit.unitId.toString()}>
+          {unit.name} (Capacity: {unit.capacity})
+        </option>
+      );
       const tempContainer = document.createElement('div');
       render(option, tempContainer);
       if (tempContainer.firstElementChild) {
@@ -99,13 +105,13 @@ class BookingManager {
   private getDayRange(): { start: Date; end: Date } {
     const selectedDateStr = this.dateInput.value;
     const selectedDateLA = moment.tz(selectedDateStr, 'America/Los_Angeles');
-    
-    const startDateLA = selectedDateLA.clone().hour(0).minute(0).second(0); // Start at 6 AM
-    const endDateLA = selectedDateLA.clone().hour(23).minute(0).second(0);   // End at 11 PM
 
-    return { 
-      start: startDateLA.utc().toDate(), 
-      end: endDateLA.utc().toDate() 
+    const startDateLA = selectedDateLA.clone().hour(0).minute(0).second(0); // Start at 6 AM
+    const endDateLA = selectedDateLA.clone().hour(23).minute(0).second(0); // End at 11 PM
+
+    return {
+      start: startDateLA.utc().toDate(),
+      end: endDateLA.utc().toDate(),
     };
   }
 
@@ -119,8 +125,10 @@ class BookingManager {
     const { start, end } = this.getDayRange();
 
     try {
-      const response = await fetch(`/api/booking-density?unitId=${selectedUnit.unitId}&start=${start.toISOString()}&end=${end.toISOString()}`);
-      
+      const response = await fetch(
+        `/api/booking-density?unitId=${selectedUnit.unitId}&start=${start.toISOString()}&end=${end.toISOString()}`
+      );
+
       if (response.ok) {
         const densityData: BookingDensityResponse = await response.json();
         this.generateTimeSlots(densityData, selectedUnit);
@@ -172,15 +180,17 @@ class BookingManager {
       current.add(15, 'minutes');
     }
     const startEpoch = start.toDate().getTime();
-    densityData.intervals.forEach((x) => {
+    densityData.intervals.forEach(x => {
       const FIFTEEN_MINUTES = 15 * 60 * 1000;
-      const startIndex = Math.floor(((new Date(x.startTime)).getTime() - startEpoch) / FIFTEEN_MINUTES);
-      const endIndex = Math.ceil(((new Date(x.endTime)).getTime() - startEpoch) / FIFTEEN_MINUTES);
+      const startIndex = Math.floor(
+        (new Date(x.startTime).getTime() - startEpoch) / FIFTEEN_MINUTES
+      );
+      const endIndex = Math.ceil((new Date(x.endTime).getTime() - startEpoch) / FIFTEEN_MINUTES);
       for (let i = startIndex; i < Math.min(endIndex + 1, this.timeSlots.length); ++i) {
         this.timeSlots[i].bookedCount = x.bookedCount;
       }
     });
-    
+
     /*
     while (current.isBefore(endMoment)) {
       const slotStart = current.clone();
@@ -213,76 +223,89 @@ class BookingManager {
 
   private renderCalendar(): void {
     this.dayCalendar.innerHTML = '';
-    
+
     this.timeSlots.forEach((slot, index) => {
       const timeSlotElement = this.createTimeSlotElement(slot, index);
       this.dayCalendar.appendChild(timeSlotElement);
     });
   }
-  
+
   private createTimeSlotElement(slot: TimeSlot, index: number): HTMLElement {
     const slotElement = document.createElement('div');
     slotElement.className = 'time-slot';
     slotElement.dataset.index = index.toString();
-    
+
     // Time label
     const timeLabel = document.createElement('div');
     timeLabel.className = 'time-label';
     timeLabel.textContent = slot.label;
-    
+
     // Density bar
     const densityBar = document.createElement('div');
     densityBar.className = 'density-bar';
-    
+
     const densityIndicator = document.createElement('div');
     densityIndicator.className = 'density-indicator';
-    
-    const utilizationPercent = slot.totalCapacity > 0 ? Math.round((slot.bookedCount / slot.totalCapacity) * 100) : 0;
+
+    const utilizationPercent =
+      slot.totalCapacity > 0 ? Math.round((slot.bookedCount / slot.totalCapacity) * 100) : 0;
     let densityClass = 'density-0';
     if (utilizationPercent >= 75) densityClass = 'density-100';
     else if (utilizationPercent >= 50) densityClass = 'density-75';
     else if (utilizationPercent >= 25) densityClass = 'density-50';
     else if (utilizationPercent > 0) densityClass = 'density-25';
-    
+
     densityIndicator.classList.add(densityClass);
     densityIndicator.style.width = `${Math.max(utilizationPercent, 10)}%`;
-    
+
     const densityText = document.createElement('span');
     densityText.className = 'density-text';
     densityText.textContent = `${slot.bookedCount}/${slot.totalCapacity} booked`;
-    
+
     densityBar.appendChild(densityIndicator);
     densityBar.appendChild(densityText);
-    
+
     slotElement.appendChild(timeLabel);
     slotElement.appendChild(densityBar);
-    
+
     // Add event listeners for drag selection
-    slotElement.addEventListener('mousedown', (e) => this.startSelection(e, index));
-    slotElement.addEventListener('mouseenter', (e) => this.updateSelection(e, index));
-    slotElement.addEventListener('mouseup', (e) => this.endSelection(e, index));
+    slotElement.addEventListener('mousedown', e => this.startSelection(e, index));
+    slotElement.addEventListener('mouseenter', e => this.updateSelection(e, index));
+    slotElement.addEventListener('mouseup', e => this.endSelection(e, index));
 
     // Add touch event listeners for mobile support
-    slotElement.addEventListener('touchstart', (e) => {
-      e.preventDefault(); // Prevent scrolling
-      this.startSelection(e, index);
-    }, { passive: false });
-    slotElement.addEventListener('touchmove', (e) => {
-      e.preventDefault(); // Prevent scrolling
-      // Find which slot the touch is over
-      const touch = e.touches[0];
-      const element = document.elementFromPoint(touch.clientX, touch.clientY);
-      const slotElement = element?.closest('.time-slot') as HTMLElement;
-      if (slotElement?.dataset.index) {
-        const touchIndex = parseInt(slotElement.dataset.index);
-        this.updateSelection(e, touchIndex);
-      }
-    }, { passive: false });
-    slotElement.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      this.endSelection(e, index);
-    }, { passive: false });
-    
+    slotElement.addEventListener(
+      'touchstart',
+      e => {
+        e.preventDefault(); // Prevent scrolling
+        this.startSelection(e, index);
+      },
+      { passive: false }
+    );
+    slotElement.addEventListener(
+      'touchmove',
+      e => {
+        e.preventDefault(); // Prevent scrolling
+        // Find which slot the touch is over
+        const touch = e.touches[0];
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+        const slotElement = element?.closest('.time-slot') as HTMLElement;
+        if (slotElement?.dataset.index) {
+          const touchIndex = parseInt(slotElement.dataset.index);
+          this.updateSelection(e, touchIndex);
+        }
+      },
+      { passive: false }
+    );
+    slotElement.addEventListener(
+      'touchend',
+      e => {
+        e.preventDefault();
+        this.endSelection(e, index);
+      },
+      { passive: false }
+    );
+
     return slotElement;
   }
 
@@ -292,24 +315,24 @@ class BookingManager {
     this.selectedStartIndex = index;
     this.selectedEndIndex = index;
     this.updateSelectionDisplay();
-    
+
     // Add global mouse/touch end listeners
     document.addEventListener('mouseup', this.globalMouseUp.bind(this), { once: true });
     document.addEventListener('touchend', this.globalMouseUp.bind(this), { once: true });
   }
-  
+
   private updateSelection(event: MouseEvent | TouchEvent, index: number): void {
     if (!this.isDragging || this.selectedStartIndex === null) return;
-    
+
     this.selectedEndIndex = index;
     this.updateSelectionDisplay();
   }
-  
+
   private endSelection(event: MouseEvent | TouchEvent, index: number): void {
     if (!this.isDragging) return;
     this.isDragging = false;
   }
-  
+
   private globalMouseUp(): void {
     this.isDragging = false;
   }
@@ -319,16 +342,16 @@ class BookingManager {
     this.dayCalendar.querySelectorAll('.time-slot').forEach(slot => {
       slot.classList.remove('selected', 'selecting');
     });
-    
+
     if (this.selectedStartIndex === null || this.selectedEndIndex === null) {
       this.selectedRangeDisplay.textContent = '';
       this.confirmButton.disabled = true;
       return;
     }
-    
+
     const startIndex = Math.min(this.selectedStartIndex, this.selectedEndIndex);
     const endIndex = Math.max(this.selectedStartIndex, this.selectedEndIndex);
-    
+
     // Highlight selected range
     for (let i = startIndex; i <= endIndex; i++) {
       const slotElement = this.dayCalendar.querySelector(`[data-index="${i}"]`);
@@ -336,7 +359,7 @@ class BookingManager {
         slotElement.classList.add(this.isDragging ? 'selecting' : 'selected');
       }
     }
-    
+
     // Update display text
     const startTime = this.timeSlots[startIndex];
     const endTime = this.timeSlots[endIndex];
@@ -355,32 +378,32 @@ class BookingManager {
     this.isDragging = false;
     this.updateSelectionDisplay();
   }
-  
+
   private async confirmBooking(): Promise<void> {
     if (this.selectedStartIndex === null || this.selectedEndIndex === null) return;
-    
+
     const selectedUnit = this.getSelectedUnit();
     if (!selectedUnit) return;
-    
+
     const startIndex = Math.min(this.selectedStartIndex, this.selectedEndIndex);
     const endIndex = Math.max(this.selectedStartIndex, this.selectedEndIndex);
-    
+
     const startTime = this.timeSlots[startIndex].time;
     const endTime = moment(this.timeSlots[endIndex].time).add(15, 'minutes').toDate();
-    
+
     try {
       const response = await fetch('/api/book-custom-range', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           unitId: selectedUnit.unitId,
           start: startTime.toISOString(),
-          end: endTime.toISOString()
-        })
+          end: endTime.toISOString(),
+        }),
       });
-      
+
       if (response.ok) {
         alert('Booking successful! Redirecting to home page...');
         window.location.href = '/';
