@@ -2,7 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import { getConfig } from './config';
-import { sslForUrl } from './sslConfig';
+import { pgPoolConfig } from './sslConfig';
 import * as schema from './schema';
 import { ensureSeedData } from './seedData';
 import fs from 'fs';
@@ -11,10 +11,7 @@ import path from 'path';
 const config = getConfig();
 
 export async function runMigrations() {
-  const pool = new Pool({
-    connectionString: config.database.postgresql_url,
-    ssl: sslForUrl(config.database.postgresql_url),
-  });
+  const pool = new Pool(pgPoolConfig(config.database.postgresql_url));
 
   const db = drizzle(pool, { schema });
 
