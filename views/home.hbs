@@ -1,5 +1,9 @@
 <div class="container">
-    {{#if user}}
+    {{#if accessBlocked}}
+        <h2>Your access is currently inactive</h2>
+        <div class="alert alert-error">{{accessBlocked}}</div>
+        <p>Your door code will not work until this is resolved. Contact the space admins if you think this is a mistake.</p>
+    {{else if user}}
         <h2>Your door/RISO code is {{user.code}}. Activate the lock below when you arrive.</h2>
 
         {{#if activationSuccess}}

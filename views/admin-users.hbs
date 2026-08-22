@@ -31,6 +31,8 @@
                         <th>Trained</th>
                         <th>Printshop</th>
                         <th>Event Creator</th>
+                        <th>Authorizer</th>
+                        <th>Access</th>
                         <th>Joined</th>
                         <th>Actions</th>
                     </tr>
@@ -69,9 +71,21 @@
                                 {{#if eventCreator}}✅ Yes{{else}}❌ No{{/if}}
                             </span>
                         </td>
+                        <td>
+                            {{#if authorizerName}}
+                                {{authorizerName}}{{#unless authorizerValid}} <span class="status-badge pending" title="Authorizer is not currently valid">invalid</span>{{/unless}}
+                            {{else}}
+                                <span class="text-muted">None</span>
+                            {{/if}}
+                        </td>
+                        <td>
+                            <span class="status-badge {{#if hasAccess}}approved{{else}}pending{{/if}}" title="{{#if authorized}}Granted{{else}}Not granted{{/if}} by authorizer">
+                                {{#if hasAccess}}✅ Yes{{else}}{{#if authorized}}⚠️ Blocked{{else}}❌ No{{/if}}{{/if}}
+                            </span>
+                        </td>
                         <td>{{formatDate createdAt}}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}}, {{printshop}}, {{eventCreator}})">
+                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}}, {{printshop}}, {{eventCreator}}, {{#if authorizerId}}{{authorizerId}}{{else}}null{{/if}}, {{authorized}})">
                                 Edit
                             </button>
                         </td>
@@ -104,6 +118,24 @@
                            class="form-input"
                            placeholder="e.g., izzy, admin">
                     <small class="form-hint">Username from RISO machine usage reports. Leave blank if user doesn't use RISO.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="modalAuthorizer">Authorizer:</label>
+                    <select id="modalAuthorizer" name="authorizerId" class="form-input">
+                        <option value="">— None (no access) —</option>
+                        {{#each authorizers}}
+                            <option value="{{authorizerId}}">{{name}} ({{kind}}){{#unless valid}} — currently invalid{{/unless}}</option>
+                        {{/each}}
+                    </select>
+                    <small class="form-hint">Who vouches for this user. "Admin" = unconditional access. <a href="/admin/authorizers">Manage authorizers</a>.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="modalAuthorized" name="authorized">
+                        Authorized (granted by the authorizer; uncheck to revoke)
+                    </label>
                 </div>
 
                 <div class="form-group">
@@ -343,8 +375,10 @@
 </style>
 
 <script>
-function openEditModal(userId, userName, risoUsername, approved, trained, printshop, eventCreator) {
+function openEditModal(userId, userName, risoUsername, approved, trained, printshop, eventCreator, authorizerId, authorized) {
     document.getElementById('modalUserName').textContent = userName;
+    document.getElementById('modalAuthorizer').value = authorizerId === null ? '' : String(authorizerId);
+    document.getElementById('modalAuthorized').checked = authorized;
     document.getElementById('modalRisoUsername').value = risoUsername || '';
     document.getElementById('modalApproved').checked = approved;
     document.getElementById('modalTrained').checked = trained;

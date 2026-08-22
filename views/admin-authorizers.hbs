@@ -1,0 +1,101 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Authorizers</h2>
+        <div>
+            <a href="/admin/users" class="btn btn-secondary">Users</a>
+            <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
+    {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
+
+    <p class="help">
+        A user may only use the space while they are <em>authorized</em> by an authorizer that is
+        currently <em>valid</em>. The built-in <strong>Admin</strong> authorizer is always valid
+        (unconditional access). <strong>Discord</strong> authorizers sign themselves in at
+        <a href="/authorizer">/authorizer</a> and grant/revoke members there; they are valid only
+        while they hold role <code>{{discordRoleId}}</code> in server <code>{{discordGuildId}}</code>.
+        This is re-checked {{#if discordConfigured}}automatically{{else}}<strong>never — Discord is not configured (DISCORD_CLIENT_ID etc.)</strong>{{/if}}.
+        When an authorizer becomes invalid (role lost, left the server, or revoked this app's
+        Discord access), everyone they vouch for loses access immediately — including any active
+        door-lock activation — and regains it if the role comes back.
+    </p>
+
+    <div class="users-table">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Kind</th>
+                    <th>Discord</th>
+                    <th>Valid</th>
+                    <th>Last checked</th>
+                    <th>Users</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each authorizers}}
+                <tr>
+                    <td>{{name}}</td>
+                    <td>{{kind}}</td>
+                    <td>
+                        {{#if isDiscord}}
+                            {{discordUsername}} <code>{{discordUserId}}</code>
+                        {{else}}
+                            <span class="text-muted">—</span>
+                        {{/if}}
+                    </td>
+                    <td>
+                        <span class="status-badge {{#if valid}}approved{{else}}pending{{/if}}">
+                            {{#if valid}}✅ Valid{{else}}❌ Invalid{{/if}}
+                        </span>
+                        {{#if lastCheckError}}<div class="text-muted" style="font-size:12px">{{lastCheckError}}</div>{{/if}}
+                    </td>
+                    <td>{{#if lastCheckedAt}}{{formatDateTime lastCheckedAt}}{{else}}<span class="text-muted">never</span>{{/if}}</td>
+                    <td>{{userCount}}</td>
+                    <td>
+                        {{#if isDiscord}}
+                            <form method="POST" action="/admin/authorizers/{{authorizerId}}/check" style="display:inline">
+                                <button type="submit" class="btn btn-sm btn-secondary">Check now</button>
+                            </form>
+                            <form method="POST" action="/admin/authorizers/{{authorizerId}}/delete" style="display:inline"
+                                  onsubmit="return confirm('Delete this authorizer? {{userCount}} user(s) will lose access.')">
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                        {{/if}}
+                    </td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<style>
+.admin-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem; padding-bottom:1rem; border-bottom:1px solid #eee; }
+.admin-header div { display:flex; gap:1rem; }
+.help { color:#495057; margin-bottom:1.5rem; line-height:1.5; }
+.users-table { background:white; border-radius:8px; overflow:auto; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+.table { width:100%; border-collapse:collapse; }
+.table th, .table td { padding:12px; text-align:left; border-bottom:1px solid #eee; vertical-align:top; }
+.table th { background:#f8f9fa; font-weight:600; color:#495057; }
+.status-badge { padding:4px 8px; border-radius:4px; font-size:12px; font-weight:500; white-space:nowrap; }
+.status-badge.approved { background:#d4edda; color:#155724; }
+.status-badge.pending { background:#f8d7da; color:#721c24; }
+.btn { padding:8px 16px; border:none; border-radius:4px; cursor:pointer; text-decoration:none; display:inline-block; font-size:14px; }
+.btn-primary { background:#007bff; color:white; }
+.btn-secondary { background:#6c757d; color:white; }
+.btn-danger { background:#dc3545; color:white; }
+.btn-sm { padding:4px 12px; font-size:12px; }
+.alert { padding:12px; border-radius:4px; margin-bottom:1rem; }
+.alert-success { background:#d4edda; color:#155724; border:1px solid #c3e6cb; }
+.alert-danger { background:#f8d7da; color:#721c24; border:1px solid #f1b0b7; }
+.form-group { margin-bottom:15px; }
+.form-group label { display:block; margin-bottom:4px; font-weight:500; }
+.form-input { width:100%; padding:8px 12px; border:1px solid #ced4da; border-radius:4px; font-size:14px; }
+.form-hint { display:block; margin-top:4px; font-size:12px; color:#6c757d; }
+.text-muted { color:#6c757d; font-style:italic; }
+</style>

@@ -15,6 +15,12 @@ export const MATERIALIZATION_HORIZON_DAYS = 90;
 // How early before a timeslot starts a user may activate the lock.
 export const ACTIVATION_GRACE_MINUTES = 15;
 
+// SQL predicate: user row alias `u` currently has effective access — their
+// authorizer has granted them AND the authorizer itself is still valid
+// (e.g. still holds the Discord role). Requires `authorizers a` joined on
+// u.authorizer_id.
+export const hasAccessSql = sql`u.authorized AND a.valid`;
+
 // Global reference to broadcast function (set by main server)
 let globalBroadcastFunction: ((message: BookingMessage) => void) | null = null;
 
@@ -484,9 +490,12 @@ export async function getActivatableSlot(
     FROM event_timeslots ts
     JOIN events e ON e.event_id = ts.event_id
     JOIN event_permissions p ON p.event_id = e.event_id AND p.user_id = ${userId}
+    JOIN users u ON u.user_id = p.user_id
+    JOIN authorizers a ON a.authorizer_id = u.authorizer_id
     LEFT JOIN lock_activations la
            ON la.timeslot_id = ts.timeslot_id AND la.user_id = ${userId} AND la.revoked_at IS NULL
-    WHERE e.status = 'active'
+    WHERE ${hasAccessSql}
+      AND e.status = 'active'
       AND ts.status = 'confirmed'
       AND ${now.toISOString()}::timestamptz >= lower(ts.slot) - make_interval(mins => ${ACTIVATION_GRACE_MINUTES})
       AND ${now.toISOString()}::timestamptz < upper(ts.slot)
@@ -669,6 +678,24 @@ export interface UserOccurrence {
   slotRange: TimeRange;
 }
 
+// A user's authorization was revoked (or their authorizer changed/removed):
+// pull their code off the lock for anything still live.
+export async function revokeActivationsForUser(
+  userId: number,
+  now: Date = new Date()
+): Promise<number> {
+  return revokeActivations(sql`la.user_id = ${userId}`, now);
+}
+
+// An authorizer became invalid (lost their Discord role, was deleted):
+// pull every dependent user's code off the lock.
+export async function revokeActivationsForAuthorizer(
+  authorizerId: number,
+  now: Date = new Date()
+): Promise<number> {
+  return revokeActivations(sql`u.authorizer_id = ${authorizerId}`, now);
+}
+
 export async function getUserOccurrences(
   userId: number,
   opts: { futureOnly?: boolean } = { futureOnly: true }
@@ -715,10 +742,12 @@ export async function getActiveAccessWindows(
     SELECT u.code, la.access_start AS "accessStart", la.access_stop AS "accessStop"
     FROM lock_activations la
     JOIN users u ON u.user_id = la.user_id
+    JOIN authorizers a ON a.authorizer_id = u.authorizer_id
     JOIN event_timeslots ts ON ts.timeslot_id = la.timeslot_id
     JOIN events e ON e.event_id = ts.event_id
     WHERE la.access_stop > ${now.toISOString()}::timestamptz
       AND la.revoked_at IS NULL
+      AND ${hasAccessSql}
       AND e.status = 'active'
       AND ts.status = 'confirmed'
   `);

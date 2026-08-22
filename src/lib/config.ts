@@ -17,6 +17,16 @@ export interface RisoConfig {
   stencilPriceCents: number;
 }
 
+// Discord OAuth app (no bot needed). Authorizers sign in with Discord; they
+// are valid while they hold role_id in guild_id.
+export interface DiscordConfig {
+  client_id: string;
+  client_secret: string;
+  guild_id: string;
+  role_id: string;
+  poll_interval_minutes: number;
+}
+
 export interface AppConfig {
   general: {
     domain: string;
@@ -34,7 +44,16 @@ export interface AppConfig {
   };
   twilio?: TwilioConfig;
   riso?: RisoConfig;
+  discord?: DiscordConfig;
 }
+
+const discordFromEnv = (required: (name: string) => string): DiscordConfig => ({
+  client_id: required('DISCORD_CLIENT_ID'),
+  client_secret: required('DISCORD_CLIENT_SECRET'),
+  guild_id: required('DISCORD_GUILD_ID'),
+  role_id: required('DISCORD_ROLE_ID'),
+  poll_interval_minutes: parseInt(process.env.DISCORD_POLL_INTERVAL_MINUTES || '5', 10),
+});
 
 const configFromEnv = (): AppConfig => {
   const required = (name: string): string => {
@@ -82,6 +101,10 @@ const configFromEnv = (): AppConfig => {
     };
   }
 
+  if (process.env.DISCORD_CLIENT_ID) {
+    config.discord = discordFromEnv(required);
+  }
+
   return config;
 };
 
@@ -94,6 +117,21 @@ export const getConfig = (): AppConfig => {
     // Override database URL with environment variable if present
     if (process.env.DATABASE_URL) {
       config.database.postgresql_url = process.env.DATABASE_URL;
+    }
+
+    // Discord settings may also come from env when using config.toml
+    if (process.env.DISCORD_CLIENT_ID) {
+      config.discord = discordFromEnv(name => {
+        const val = process.env[name];
+        if (!val) {
+          exitWithError(`Missing required environment variable: ${name}`);
+          return process.exit(1);
+        }
+        return val;
+      });
+    }
+    if (config.discord && !config.discord.poll_interval_minutes) {
+      config.discord.poll_interval_minutes = 5;
     }
 
     return config;

@@ -33,6 +33,30 @@ export function verifyAdminToken(token: string): boolean {
   }
 }
 
+// Authorizer sessions: set after a successful Discord OAuth sign-in.
+export type AuthorizerTokenPayload = {
+  type: 'authorizer';
+  authorizerId: number;
+  iat: number;
+  exp: number;
+};
+
+export function generateAuthorizerToken(authorizerId: number): string {
+  const payload: Omit<AuthorizerTokenPayload, 'iat' | 'exp'> = { type: 'authorizer', authorizerId };
+  return jwt.sign(payload, config.jwt.secret, { expiresIn: '7d' });
+}
+
+export function getAuthorizerIdFromRequest(req: FastifyRequest): number | null {
+  const token = req.cookies?.authorizer_session;
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, config.jwt.secret) as AuthorizerTokenPayload;
+    return decoded.type === 'authorizer' ? decoded.authorizerId : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getVerifiedPhoneFromRequest(req: FastifyRequest): string | null {
   // Get the verification token from the request
   const verificationToken =

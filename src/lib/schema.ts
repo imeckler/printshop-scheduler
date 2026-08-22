@@ -22,6 +22,30 @@ const tstzrange = customType<{ data: string; notNull: false; default: false }>({
   },
 });
 
+// Someone (or something) whose standing gates other users' access. A user
+// may only use the space while `authorized` is set AND their authorizer is
+// currently `valid`.
+//   kind = 'admin'   : always valid; assigning it grants unconditional access.
+//   kind = 'discord' : a Discord user who signed in via OAuth. Valid while
+//                      they hold the configured role in the configured guild
+//                      (config.discord.guild_id / role_id) — re-checked by the
+//                      poller using their stored OAuth refresh token.
+export const authorizers = pgTable('authorizers', {
+  authorizerId: serial('authorizer_id').primaryKey(),
+  kind: text('kind').notNull(), // 'admin' | 'discord'
+  name: text('name').notNull(),
+  discordUserId: text('discord_user_id').unique(),
+  discordUsername: text('discord_username'),
+  // OAuth tokens (scopes: identify guilds.members.read). Refreshed by the poller.
+  discordAccessToken: text('discord_access_token'),
+  discordRefreshToken: text('discord_refresh_token'),
+  discordTokenExpiresAt: timestamp('discord_token_expires_at', { withTimezone: true }),
+  valid: boolean('valid').notNull().default(true),
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  lastCheckError: text('last_check_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const users = pgTable(
   'users',
   {
@@ -39,6 +63,13 @@ export const users = pgTable(
     applicationReviewer: boolean('application_reviewer').notNull().default(false),
     printshop: boolean('printshop').notNull().default(false),
     eventCreator: boolean('event_creator').notNull().default(false),
+    // NULL = nobody vouches for this user yet (no access). See `authorizers`.
+    authorizerId: integer('authorizer_id').references(() => authorizers.authorizerId, {
+      onDelete: 'set null',
+    }),
+    // Whether the authorizer has granted (vs. revoked) this user. Effective
+    // access additionally requires the authorizer row to be `valid`.
+    authorized: boolean('authorized').notNull().default(false),
     risoUsername: text('riso_username'), // Username on RISO machine for usage tracking
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -211,7 +242,15 @@ export const creditBalances = pgTable('credit_balances', {
 // );
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const authorizersRelations = relations(authorizers, ({ many }) => ({
+  users: many(users),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  authorizer: one(authorizers, {
+    fields: [users.authorizerId],
+    references: [authorizers.authorizerId],
+  }),
   bookings: many(bookings),
   creditTransactions: many(creditTransactions),
   creditBalance: many(creditBalances),

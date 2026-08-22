@@ -17,6 +17,8 @@ import {
   verifyAdminToken,
   generatePhoneVerificationToken,
   getVerifiedUserIdFromRequest,
+  generateAuthorizerToken,
+  getAuthorizerIdFromRequest,
 } from './lib/tokenService';
 import { User } from './lib/dbtypes';
 import {
@@ -33,6 +35,8 @@ import {
   getUnitDensity,
   getActiveAccessWindows,
   startMaterializationTimer,
+  revokeActivationsForUser,
+  revokeActivationsForAuthorizer,
   buildRecurrence,
   describeSchedule,
   localDateTimeToInstant,
@@ -49,7 +53,16 @@ import {
   units,
   risographUsages,
   risoLastSeenTotals,
+  authorizers,
 } from './lib/schema';
+import {
+  refreshAuthorizer,
+  startDiscordAuthorizerPoller,
+  discordConfig,
+  authorizationUrl,
+  exchangeCode,
+  fetchMe,
+} from './lib/discord';
 import { eq, desc, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { getConfig } from './lib/config';
@@ -190,6 +203,29 @@ function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
   return true;
 }
 
+// Effective access: the user's authorizer has granted them, and the
+// authorizer itself is still valid (e.g. still holds the Discord role).
+function hasAccess(
+  user: { authorized: boolean },
+  authorizer: { valid: boolean } | null | undefined
+): boolean {
+  return user.authorized && !!authorizer && authorizer.valid;
+}
+
+// Human-readable reason a user currently lacks access, for the home page.
+function accessBlockedReason(
+  user: { authorized: boolean },
+  authorizer: { valid: boolean; name: string; kind: string } | null | undefined
+): string {
+  if (!authorizer) return 'No one has vouched for your access yet.';
+  if (!user.authorized)
+    return `Your access via ${authorizer.name} has not been granted (or was revoked).`;
+  if (!authorizer.valid) {
+    return `Your access depends on ${authorizer.name}, who is not currently eligible to authorize members.`;
+  }
+  return '';
+}
+
 // shared auth function
 function requirePermissions(
   perms: Array<{ [K in keyof User]: User[K] extends boolean ? K : never }[keyof User]>
@@ -200,18 +236,22 @@ function requirePermissions(
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
-    const user = await db.query.users.findFirst({
+    const userWithAuth = await db.query.users.findFirst({
       where: eq(users.userId, userId),
+      with: { authorizer: true },
     });
-    if (!user) {
+    if (!userWithAuth) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
 
+    const { authorizer, ...user } = userWithAuth;
     request.user = user;
 
-    const ok =
-      (request.cookies?.admin_session && verifyAdminToken(request.cookies.admin_session)) ||
-      perms.every(k => user[k]);
+    const isAdmin =
+      !!request.cookies?.admin_session && verifyAdminToken(request.cookies.admin_session);
+    // Every user-facing action is conditional on the user currently being
+    // authorized (granted by a valid authorizer). Admin sessions bypass this.
+    const ok = isAdmin || (hasAccess(user, authorizer) && perms.every(k => user[k]));
     if (!ok) return reply.code(403).send({ error: 'Forbidden' });
   };
 }
@@ -290,11 +330,22 @@ server.get('/', async (request, reply) => {
     // Get user details to check approval status
     const user = await db.query.users.findFirst({
       where: eq(users.userId, userId),
+      with: { authorizer: true },
     });
 
     if (!user) {
       reply.clearCookie('phone_verification');
       return reply.redirect('/login');
+    }
+
+    // Approved but not currently authorized: explain why, offer nothing else.
+    if (user.approved && !hasAccess(user, user.authorizer)) {
+      return reply.view('home', {
+        user: { id: userId, name: user.name, code: user.code, printshop: false },
+        accessBlocked: accessBlockedReason(user, user.authorizer),
+        occurrences: [],
+        activatable: null,
+      });
     }
 
     // If user is approved, show normal homepage
@@ -466,12 +517,22 @@ server.get('/admin/users', async (request, reply) => {
   try {
     const allUsers = await db.query.users.findMany({
       orderBy: desc(users.createdAt),
+      with: { authorizer: true },
+    });
+    const allAuthorizers = await db.query.authorizers.findMany({
+      orderBy: [authorizers.kind, authorizers.name],
     });
 
     const { success, error } = request.query as { success?: string; error?: string };
 
     return reply.view('admin-users', {
-      users: allUsers,
+      users: allUsers.map(u => ({
+        ...u,
+        hasAccess: hasAccess(u, u.authorizer),
+        authorizerName: u.authorizer?.name ?? null,
+        authorizerValid: u.authorizer?.valid ?? false,
+      })),
+      authorizers: allAuthorizers,
       success,
       error,
     });
@@ -487,13 +548,26 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
 
   try {
     const { userId } = request.params as { userId: string };
-    const { approved, trained, printshop, eventCreator, risoUsername } = request.body as {
-      approved?: string;
-      trained?: string;
-      printshop?: string;
-      eventCreator?: string;
-      risoUsername?: string;
-    };
+    const { approved, trained, printshop, eventCreator, risoUsername, authorizerId, authorized } =
+      request.body as {
+        approved?: string;
+        trained?: string;
+        printshop?: string;
+        eventCreator?: string;
+        risoUsername?: string;
+        authorizerId?: string;
+        authorized?: string;
+      };
+
+    const id = parseInt(userId);
+    const before = await db.query.users.findFirst({
+      where: eq(users.userId, id),
+      with: { authorizer: true },
+    });
+    if (!before) return reply.redirect('/admin/users?error=User+not+found');
+
+    const newAuthorizerId = authorizerId ? parseInt(authorizerId) : null;
+    const newAuthorized = authorized === 'on';
 
     await db
       .update(users)
@@ -503,8 +577,19 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
         printshop: printshop === 'on',
         eventCreator: eventCreator === 'on',
         risoUsername: risoUsername?.trim() || null,
+        authorizerId: Number.isNaN(newAuthorizerId) ? null : newAuthorizerId,
+        authorized: newAuthorized,
       })
-      .where(eq(users.userId, parseInt(userId)));
+      .where(eq(users.userId, id));
+
+    // If this edit took away their effective access, pull them off the lock.
+    const after = await db.query.users.findFirst({
+      where: eq(users.userId, id),
+      with: { authorizer: true },
+    });
+    if (hasAccess(before, before.authorizer) && after && !hasAccess(after, after.authorizer)) {
+      await revokeActivationsForUser(id);
+    }
 
     return reply.redirect('/admin/users?success=User+updated+successfully');
   } catch (error) {
@@ -512,6 +597,258 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
     return reply.redirect('/admin/users?error=Failed+to+update+user');
   }
 });
+
+// ---------------------------------------------------------------------
+// Admin: authorizers
+// ---------------------------------------------------------------------
+server.get('/admin/authorizers', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+
+  const rows = await db.execute(sql`
+    SELECT a.*,
+           (SELECT count(*) FROM users u WHERE u.authorizer_id = a.authorizer_id)::int AS "userCount"
+    FROM authorizers a
+    ORDER BY a.kind, a.name
+  `);
+  const { success, error } = request.query as { success?: string; error?: string };
+  return reply.view('admin-authorizers', {
+    authorizers: (rows.rows as any[]).map(r => ({
+      authorizerId: r.authorizer_id,
+      kind: r.kind,
+      name: r.name,
+      discordUserId: r.discord_user_id,
+      discordUsername: r.discord_username,
+      valid: r.valid,
+      lastCheckedAt: r.last_checked_at,
+      lastCheckError: r.last_check_error,
+      userCount: r.userCount,
+      isDiscord: r.kind === 'discord',
+    })),
+    discordConfigured: !!config.discord,
+    discordGuildId: config.discord?.guild_id,
+    discordRoleId: config.discord?.role_id,
+    success,
+    error,
+  });
+});
+
+server.post('/admin/authorizers/:id/check', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+  const id = parseInt((request.params as { id: string }).id);
+  if (Number.isNaN(id)) return reply.redirect('/admin/authorizers?error=Invalid+authorizer+id');
+  try {
+    const valid = await refreshAuthorizer(id);
+    const msg =
+      valid === null
+        ? 'Check+could+not+be+completed+(see+error)'
+        : valid
+          ? 'Authorizer+is+valid'
+          : 'Authorizer+is+NOT+valid';
+    return reply.redirect(`/admin/authorizers?${valid === null ? 'error' : 'success'}=${msg}`);
+  } catch (err) {
+    console.error('Error checking authorizer:', err);
+    return reply.redirect('/admin/authorizers?error=Check+failed');
+  }
+});
+
+server.post('/admin/authorizers/:id/delete', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+  const id = parseInt((request.params as { id: string }).id);
+  if (Number.isNaN(id)) return reply.redirect('/admin/authorizers?error=Invalid+authorizer+id');
+  try {
+    const row = await db.query.authorizers.findFirst({ where: eq(authorizers.authorizerId, id) });
+    if (!row) return reply.redirect('/admin/authorizers?error=Not+found');
+    if (row.kind === 'admin') {
+      return reply.redirect('/admin/authorizers?error=The+admin+authorizer+cannot+be+deleted');
+    }
+    // Dependent users lose access (authorizer_id -> NULL via FK); get them
+    // off the lock first while the join still resolves.
+    await revokeActivationsForAuthorizer(id);
+    await db.delete(authorizers).where(eq(authorizers.authorizerId, id));
+    return reply.redirect('/admin/authorizers?success=Authorizer+deleted');
+  } catch (err) {
+    console.error('Error deleting authorizer:', err);
+    return reply.redirect('/admin/authorizers?error=Failed+to+delete+authorizer');
+  }
+});
+
+// ---------------------------------------------------------------------
+// Authorizer self-service: sign in with Discord, grant/revoke users
+// ---------------------------------------------------------------------
+const OAUTH_STATE_COOKIE = 'discord_oauth_state';
+
+server.get('/authorizer/login', async (request, reply) => {
+  if (!discordConfig()) {
+    return reply.code(503).send('Discord sign-in is not configured');
+  }
+  const state = crypto.randomBytes(16).toString('hex');
+  reply.setCookie(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 10 * 60,
+    path: '/',
+  });
+  return reply.redirect(authorizationUrl(state));
+});
+
+server.get('/authorizer/callback', async (request, reply) => {
+  const { code, state, error } = request.query as { code?: string; state?: string; error?: string };
+  reply.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
+  if (error || !code || !state || state !== request.cookies?.[OAUTH_STATE_COOKIE]) {
+    return reply.redirect(
+      '/authorizer?error=' + encodeURIComponent(error || 'Discord sign-in failed')
+    );
+  }
+
+  try {
+    const tokens = await exchangeCode(code);
+    const me = await fetchMe(tokens.accessToken);
+
+    const [row] = await db
+      .insert(authorizers)
+      .values({
+        kind: 'discord',
+        name: me.username,
+        discordUserId: me.id,
+        discordUsername: me.username,
+        discordAccessToken: tokens.accessToken,
+        discordRefreshToken: tokens.refreshToken,
+        discordTokenExpiresAt: tokens.expiresAt,
+        valid: false,
+      })
+      .onConflictDoUpdate({
+        target: authorizers.discordUserId,
+        set: {
+          name: me.username,
+          discordUsername: me.username,
+          discordAccessToken: tokens.accessToken,
+          discordRefreshToken: tokens.refreshToken,
+          discordTokenExpiresAt: tokens.expiresAt,
+        },
+      })
+      .returning();
+
+    await refreshAuthorizer(row.authorizerId);
+
+    reply.setCookie('authorizer_session', generateAuthorizerToken(row.authorizerId), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+    return reply.redirect('/authorizer');
+  } catch (err) {
+    console.error('Discord OAuth callback failed:', err);
+    return reply.redirect('/authorizer?error=Discord+sign-in+failed');
+  }
+});
+
+server.post('/authorizer/logout', async (request, reply) => {
+  reply.clearCookie('authorizer_session', { path: '/' });
+  return reply.redirect('/authorizer');
+});
+
+async function loadAuthorizer(request: FastifyRequest) {
+  const id = getAuthorizerIdFromRequest(request);
+  if (!id) return null;
+  const row = await db.query.authorizers.findFirst({ where: eq(authorizers.authorizerId, id) });
+  return row && row.kind === 'discord' ? row : null;
+}
+
+server.get('/authorizer', async (request, reply) => {
+  const { success, error } = request.query as { success?: string; error?: string };
+  const me = await loadAuthorizer(request);
+  if (!me) {
+    return reply.view('authorizer', {
+      signedIn: false,
+      discordConfigured: !!discordConfig(),
+      success,
+      error,
+    });
+  }
+
+  // Only approved members are listed; applicants aren't in the space yet.
+  const rows = await db.query.users.findMany({
+    where: eq(users.approved, true),
+    orderBy: users.name,
+    with: { authorizer: true },
+  });
+  const members = rows.map(u => ({
+    userId: u.userId,
+    name: u.name || u.phoneE164,
+    phone: u.phoneE164,
+    mine: u.authorizerId === me.authorizerId,
+    grantedByMe: u.authorizerId === me.authorizerId && u.authorized,
+    otherAuthorizer:
+      u.authorizerId && u.authorizerId !== me.authorizerId ? u.authorizer?.name : null,
+    otherActive: u.authorizerId !== me.authorizerId && hasAccess(u, u.authorizer),
+    otherIsAdmin: u.authorizerId !== me.authorizerId && u.authorizer?.kind === 'admin',
+  }));
+
+  return reply.view('authorizer', {
+    signedIn: true,
+    me: { name: me.name, valid: me.valid, lastCheckError: me.lastCheckError },
+    members,
+    success,
+    error,
+  });
+});
+
+async function authorizerAction(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  action: 'grant' | 'revoke'
+) {
+  const me = await loadAuthorizer(request);
+  if (!me) return reply.redirect('/authorizer?error=Please+sign+in');
+  if (!me.valid)
+    return reply.redirect('/authorizer?error=You+are+not+currently+eligible+to+authorize+members');
+
+  const userId = parseInt((request.params as { userId: string }).userId);
+  if (Number.isNaN(userId)) return reply.redirect('/authorizer?error=Invalid+user');
+  const target = await db.query.users.findFirst({ where: eq(users.userId, userId) });
+  if (!target || !target.approved) return reply.redirect('/authorizer?error=User+not+found');
+
+  if (action === 'grant') {
+    // Taking over from another authorizer is allowed; the admin authorizer
+    // (unconditional access) is not overridable from here.
+    if (target.authorizerId && target.authorizerId !== me.authorizerId) {
+      const other = await db.query.authorizers.findFirst({
+        where: eq(authorizers.authorizerId, target.authorizerId),
+      });
+      if (other?.kind === 'admin') {
+        return reply.redirect(
+          '/authorizer?error=That+member+has+unconditional+access+set+by+an+admin'
+        );
+      }
+    }
+    await db
+      .update(users)
+      .set({ authorizerId: me.authorizerId, authorized: true })
+      .where(eq(users.userId, userId));
+    return reply.redirect(
+      `/authorizer?success=${encodeURIComponent(`Granted access to ${target.name || target.phoneE164}`)}`
+    );
+  }
+
+  if (target.authorizerId !== me.authorizerId) {
+    return reply.redirect('/authorizer?error=You+can+only+revoke+members+you+authorized');
+  }
+  await db.update(users).set({ authorized: false }).where(eq(users.userId, userId));
+  await revokeActivationsForUser(userId);
+  return reply.redirect(
+    `/authorizer?success=${encodeURIComponent(`Revoked access for ${target.name || target.phoneE164}`)}`
+  );
+}
+
+server.post('/authorizer/users/:userId/grant', (req, reply) =>
+  authorizerAction(req, reply, 'grant')
+);
+server.post('/authorizer/users/:userId/revoke', (req, reply) =>
+  authorizerAction(req, reply, 'revoke')
+);
 
 // Admin events management page. Printshop bookings (events with a unit) are
 // hidden by default to keep the list readable; ?all=1 shows them.
@@ -1844,6 +2181,9 @@ async function start() {
 
     // Materialize recurring events now and daily thereafter
     startMaterializationTimer();
+
+    // Re-check Discord-backed authorizers periodically
+    startDiscordAuthorizerPoller();
 
     // Start the server (PORT env overrides for local testing; deploys use 3000)
     const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

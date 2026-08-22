@@ -1,0 +1,98 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Authorize members</h2>
+        {{#if signedIn}}
+        <form method="POST" action="/authorizer/logout"><button type="submit" class="btn btn-secondary">Sign out</button></form>
+        {{/if}}
+    </div>
+
+    {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
+    {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
+
+    {{#unless signedIn}}
+        <p class="help">
+            Members of the space need someone to vouch for them. If you hold the authorizer role on
+            the Discord server, sign in below to grant or revoke members' access. Access you grant
+            lasts only as long as you keep the role.
+        </p>
+        {{#if discordConfigured}}
+            <a href="/authorizer/login" class="btn btn-primary">Sign in with Discord</a>
+        {{else}}
+            <div class="alert alert-danger">Discord sign-in is not configured on this server.</div>
+        {{/if}}
+    {{else}}
+        <p class="help">
+            Signed in as <strong>{{me.name}}</strong>.
+            {{#if me.valid}}
+                <span class="status-badge approved">✅ Eligible to authorize</span>
+            {{else}}
+                <span class="status-badge pending">❌ Not eligible</span>
+                — {{#if me.lastCheckError}}{{me.lastCheckError}}{{else}}you don't hold the required Discord role{{/if}}.
+                Anyone you previously authorized has lost access until this is resolved.
+            {{/if}}
+        </p>
+
+        <div class="users-table">
+            <table class="table">
+                <thead><tr><th>Member</th><th>Phone</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    {{#each members}}
+                    <tr>
+                        <td>{{name}}</td>
+                        <td>{{phone}}</td>
+                        <td>
+                            {{#if grantedByMe}}
+                                <span class="status-badge approved">Authorized by you</span>
+                            {{else if mine}}
+                                <span class="status-badge pending">Revoked by you</span>
+                            {{else if otherAuthorizer}}
+                                <span class="status-badge {{#if otherActive}}approved{{else}}pending{{/if}}">Via {{otherAuthorizer}}</span>
+                            {{else}}
+                                <span class="text-muted">No authorizer</span>
+                            {{/if}}
+                        </td>
+                        <td>
+                            {{#if grantedByMe}}
+                                <form method="POST" action="/authorizer/users/{{userId}}/revoke" style="display:inline"
+                                      onsubmit="return confirm('Revoke access for {{name}}?')">
+                                    <button type="submit" class="btn btn-sm btn-danger" {{#unless ../me.valid}}disabled{{/unless}}>Revoke</button>
+                                </form>
+                            {{else if otherIsAdmin}}
+                                <span class="text-muted">Set by admin</span>
+                            {{else}}
+                                <form method="POST" action="/authorizer/users/{{userId}}/grant" style="display:inline">
+                                    <button type="submit" class="btn btn-sm btn-primary" {{#unless ../me.valid}}disabled{{/unless}}>
+                                        {{#if otherAuthorizer}}Take over{{else}}Grant{{/if}}
+                                    </button>
+                                </form>
+                            {{/if}}
+                        </td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+    {{/unless}}
+</div>
+
+<style>
+.admin-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid #eee; }
+.help { color:#495057; margin-bottom:1.5rem; line-height:1.6; }
+.users-table { background:white; border-radius:8px; overflow:auto; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+.table { width:100%; border-collapse:collapse; }
+.table th, .table td { padding:12px; text-align:left; border-bottom:1px solid #eee; }
+.table th { background:#f8f9fa; font-weight:600; color:#495057; }
+.status-badge { padding:4px 8px; border-radius:4px; font-size:12px; font-weight:500; white-space:nowrap; }
+.status-badge.approved { background:#d4edda; color:#155724; }
+.status-badge.pending { background:#f8d7da; color:#721c24; }
+.btn { padding:8px 16px; border:none; border-radius:4px; cursor:pointer; text-decoration:none; display:inline-block; font-size:14px; }
+.btn[disabled] { opacity:.5; cursor:not-allowed; }
+.btn-primary { background:#007bff; color:white; }
+.btn-secondary { background:#6c757d; color:white; }
+.btn-danger { background:#dc3545; color:white; }
+.btn-sm { padding:4px 12px; font-size:12px; }
+.alert { padding:12px; border-radius:4px; margin-bottom:1rem; }
+.alert-success { background:#d4edda; color:#155724; border:1px solid #c3e6cb; }
+.alert-danger { background:#f8d7da; color:#721c24; border:1px solid #f1b0b7; }
+.text-muted { color:#6c757d; font-style:italic; }
+</style>
