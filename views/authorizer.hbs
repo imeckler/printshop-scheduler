@@ -32,6 +32,7 @@
             {{/if}}
         </p>
 
+        {{#if me.valid}}
         <div class="users-table">
             <table class="table">
                 <thead><tr><th>Member</th><th>Phone</th><th>Status</th><th></th></tr></thead>
@@ -55,13 +56,11 @@
                             {{#if grantedByMe}}
                                 <form method="POST" action="/authorizer/users/{{userId}}/revoke" style="display:inline"
                                       onsubmit="return confirm('Revoke access for {{name}}?')">
-                                    <button type="submit" class="btn btn-sm btn-danger" {{#unless ../me.valid}}disabled{{/unless}}>Revoke</button>
+                                    <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
                                 </form>
-                            {{else if otherIsAdmin}}
-                                <span class="text-muted">Set by admin</span>
                             {{else}}
                                 <form method="POST" action="/authorizer/users/{{userId}}/grant" style="display:inline">
-                                    <button type="submit" class="btn btn-sm btn-primary" {{#unless ../me.valid}}disabled{{/unless}}>
+                                    <button type="submit" class="btn btn-sm btn-primary">
                                         {{#if otherAuthorizer}}Take over{{else}}Grant{{/if}}
                                     </button>
                                 </form>
@@ -72,6 +71,7 @@
                 </tbody>
             </table>
         </div>
+        {{/if}}
     {{/unless}}
 </div>
 

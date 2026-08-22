@@ -769,23 +769,36 @@ server.get('/authorizer', async (request, reply) => {
     });
   }
 
+  // Ineligible authorizers see only their status, never the member list.
+  if (!me.valid) {
+    return reply.view('authorizer', {
+      signedIn: true,
+      me: { name: me.name, valid: false, lastCheckError: me.lastCheckError },
+      members: [],
+      success,
+      error,
+    });
+  }
+
   // Only approved members are listed; applicants aren't in the space yet.
+  // Members given unconditional access by an admin are not shown at all.
   const rows = await db.query.users.findMany({
     where: eq(users.approved, true),
     orderBy: users.name,
     with: { authorizer: true },
   });
-  const members = rows.map(u => ({
-    userId: u.userId,
-    name: u.name || u.phoneE164,
-    phone: u.phoneE164,
-    mine: u.authorizerId === me.authorizerId,
-    grantedByMe: u.authorizerId === me.authorizerId && u.authorized,
-    otherAuthorizer:
-      u.authorizerId && u.authorizerId !== me.authorizerId ? u.authorizer?.name : null,
-    otherActive: u.authorizerId !== me.authorizerId && hasAccess(u, u.authorizer),
-    otherIsAdmin: u.authorizerId !== me.authorizerId && u.authorizer?.kind === 'admin',
-  }));
+  const members = rows
+    .filter(u => u.authorizer?.kind !== 'admin')
+    .map(u => ({
+      userId: u.userId,
+      name: u.name || u.phoneE164,
+      phone: u.phoneE164,
+      mine: u.authorizerId === me.authorizerId,
+      grantedByMe: u.authorizerId === me.authorizerId && u.authorized,
+      otherAuthorizer:
+        u.authorizerId && u.authorizerId !== me.authorizerId ? u.authorizer?.name : null,
+      otherActive: u.authorizerId !== me.authorizerId && hasAccess(u, u.authorizer),
+    }));
 
   return reply.view('authorizer', {
     signedIn: true,
