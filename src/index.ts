@@ -226,6 +226,23 @@ function accessBlockedReason(
   return '';
 }
 
+// Login only: requires a verified phone session and loads request.user, but
+// does NOT require the user to be authorized/vouched. Use for routes a
+// not-yet-approved user must reach (e.g. submitting an application).
+async function requireLogin(request: FastifyRequest, reply: FastifyReply) {
+  const userId = getVerifiedUserIdFromRequest(request);
+  if (!userId) {
+    return reply.code(403).send({ error: 'Forbidden' });
+  }
+  const user = await db.query.users.findFirst({
+    where: eq(users.userId, userId),
+  });
+  if (!user) {
+    return reply.code(403).send({ error: 'Forbidden' });
+  }
+  request.user = user;
+}
+
 // shared auth function
 function requirePermissions(
   perms: Array<{ [K in keyof User]: User[K] extends boolean ? K : never }[keyof User]>
@@ -1650,7 +1667,7 @@ server.post(
   '/submit-application',
   {
     schema: SubmitApplicationSchema,
-    preHandler: requirePermissions([]),
+    preHandler: requireLogin,
   },
   async (request, reply) => {
     try {
