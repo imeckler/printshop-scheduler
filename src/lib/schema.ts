@@ -87,10 +87,11 @@ export const applications = pgTable('applications', {
   email: text('email').notNull(),
   phoneE164: text('phone_e164').notNull(),
   intendedUsage: text('intended_usage').notNull(),
-  reference1Name: text('reference1_name').notNull(),
-  reference1Phone: text('reference1_phone').notNull(),
-  reference2Name: text('reference2_name').notNull(),
-  reference2Phone: text('reference2_phone').notNull(),
+  // References were removed from the application form; kept nullable for old rows.
+  reference1Name: text('reference1_name'),
+  reference1Phone: text('reference1_phone'),
+  reference2Name: text('reference2_name'),
+  reference2Phone: text('reference2_phone'),
   status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected'
   reviewedBy: bigint('reviewed_by', { mode: 'number' }).references(() => users.userId),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),

@@ -49,10 +49,6 @@ class ApplicationManager {
         email: formData.get('email'),
         phone: formData.get('phone'),
         intendedUsage: formData.get('intendedUsage'),
-        reference1Name: formData.get('reference1Name'),
-        reference1Phone: formData.get('reference1Phone'),
-        reference2Name: formData.get('reference2Name'),
-        reference2Phone: formData.get('reference2Phone'),
       };
 
       const response = await fetch('/submit-application', {

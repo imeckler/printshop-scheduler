@@ -64,6 +64,13 @@
       "when": 1787435993559,
       "tag": "0008_authorizers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788130806517,
+      "tag": "0009_references_optional",
+      "breakpoints": true
     }
   ]
 }

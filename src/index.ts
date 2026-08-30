@@ -1644,10 +1644,6 @@ const SubmitApplicationSchema = {
     name: Type.String({ minLength: 1, maxLength: 100 }),
     email: Type.String({ format: 'email', maxLength: 255 }),
     intendedUsage: Type.String({ minLength: 1, maxLength: 500 }),
-    reference1Name: Type.String({ minLength: 1, maxLength: 100 }),
-    reference1Phone: Type.String({ pattern: '^\\+[1-9][0-9]{7,15}$' }),
-    reference2Name: Type.String({ minLength: 1, maxLength: 100 }),
-    reference2Phone: Type.String({ pattern: '^\\+[1-9][0-9]{7,15}$' }),
   }),
   response: {
     200: Type.Object({
@@ -1671,15 +1667,7 @@ server.post(
   },
   async (request, reply) => {
     try {
-      const {
-        name,
-        email,
-        intendedUsage,
-        reference1Name,
-        reference1Phone,
-        reference2Name,
-        reference2Phone,
-      } = request.body;
+      const { name, email, intendedUsage } = request.body;
 
       if (!request.user) {
         reply.code(500);
@@ -1704,10 +1692,6 @@ server.post(
         email,
         phoneE164: phone,
         intendedUsage,
-        reference1Name,
-        reference1Phone,
-        reference2Name,
-        reference2Phone,
         status: 'pending',
       });
 
