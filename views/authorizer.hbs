@@ -2,7 +2,7 @@
     <div class="admin-header">
         <h2>Authorize members</h2>
         {{#if signedIn}}
-        <form method="POST" action="/authorizer/logout"><button type="submit" class="btn btn-secondary">Sign out</button></form>
+        <form method="POST" action="/authorize/logout"><button type="submit" class="btn btn-secondary">Sign out</button></form>
         {{/if}}
     </div>
 
@@ -16,7 +16,7 @@
             lasts only as long as you keep the role.
         </p>
         {{#if discordConfigured}}
-            <a href="/authorizer/login" class="btn btn-primary">Sign in with Discord</a>
+            <a href="/authorize/login" class="btn btn-primary">Sign in with Discord</a>
         {{else}}
             <div class="alert alert-danger">Discord sign-in is not configured on this server.</div>
         {{/if}}
@@ -54,12 +54,12 @@
                         </td>
                         <td>
                             {{#if grantedByMe}}
-                                <form method="POST" action="/authorizer/users/{{userId}}/revoke" style="display:inline"
+                                <form method="POST" action="/authorize/users/{{userId}}/revoke" style="display:inline"
                                       onsubmit="return confirm('Revoke access for {{name}}?')">
                                     <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
                                 </form>
                             {{else}}
-                                <form method="POST" action="/authorizer/users/{{userId}}/grant" style="display:inline">
+                                <form method="POST" action="/authorize/users/{{userId}}/grant" style="display:inline">
                                     <button type="submit" class="btn btn-sm btn-primary">
                                         {{#if otherAuthorizer}}Take over{{else}}Grant{{/if}}
                                     </button>

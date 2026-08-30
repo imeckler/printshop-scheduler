@@ -28,7 +28,7 @@ export function discordConfig(): DiscordConfig | null {
 export function redirectUri(): string {
   const { domain } = getConfig().general;
   const proto = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(domain) ? 'http' : 'https';
-  return `${proto}://${domain}/authorizer/callback`;
+  return `${proto}://${domain}/authorize/callback`;
 }
 
 export function authorizationUrl(state: string): string {

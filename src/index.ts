@@ -677,7 +677,7 @@ server.post('/admin/authorizers/:id/delete', async (request, reply) => {
 // ---------------------------------------------------------------------
 const OAUTH_STATE_COOKIE = 'discord_oauth_state';
 
-server.get('/authorizer/login', async (request, reply) => {
+server.get('/authorize/login', async (request, reply) => {
   if (!discordConfig()) {
     return reply.code(503).send('Discord sign-in is not configured');
   }
@@ -692,12 +692,12 @@ server.get('/authorizer/login', async (request, reply) => {
   return reply.redirect(authorizationUrl(state));
 });
 
-server.get('/authorizer/callback', async (request, reply) => {
+server.get('/authorize/callback', async (request, reply) => {
   const { code, state, error } = request.query as { code?: string; state?: string; error?: string };
   reply.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
   if (error || !code || !state || state !== request.cookies?.[OAUTH_STATE_COOKIE]) {
     return reply.redirect(
-      '/authorizer?error=' + encodeURIComponent(error || 'Discord sign-in failed')
+      '/authorize?error=' + encodeURIComponent(error || 'Discord sign-in failed')
     );
   }
 
@@ -738,16 +738,16 @@ server.get('/authorizer/callback', async (request, reply) => {
       maxAge: 7 * 24 * 60 * 60,
       path: '/',
     });
-    return reply.redirect('/authorizer');
+    return reply.redirect('/authorize');
   } catch (err) {
     console.error('Discord OAuth callback failed:', err);
-    return reply.redirect('/authorizer?error=Discord+sign-in+failed');
+    return reply.redirect('/authorize?error=Discord+sign-in+failed');
   }
 });
 
-server.post('/authorizer/logout', async (request, reply) => {
+server.post('/authorize/logout', async (request, reply) => {
   reply.clearCookie('authorizer_session', { path: '/' });
-  return reply.redirect('/authorizer');
+  return reply.redirect('/authorize');
 });
 
 async function loadAuthorizer(request: FastifyRequest) {
@@ -757,7 +757,7 @@ async function loadAuthorizer(request: FastifyRequest) {
   return row && row.kind === 'discord' ? row : null;
 }
 
-server.get('/authorizer', async (request, reply) => {
+server.get('/authorize', async (request, reply) => {
   const { success, error } = request.query as { success?: string; error?: string };
   const me = await loadAuthorizer(request);
   if (!me) {
@@ -815,14 +815,14 @@ async function authorizerAction(
   action: 'grant' | 'revoke'
 ) {
   const me = await loadAuthorizer(request);
-  if (!me) return reply.redirect('/authorizer?error=Please+sign+in');
+  if (!me) return reply.redirect('/authorize?error=Please+sign+in');
   if (!me.valid)
-    return reply.redirect('/authorizer?error=You+are+not+currently+eligible+to+authorize+members');
+    return reply.redirect('/authorize?error=You+are+not+currently+eligible+to+authorize+members');
 
   const userId = parseInt((request.params as { userId: string }).userId);
-  if (Number.isNaN(userId)) return reply.redirect('/authorizer?error=Invalid+user');
+  if (Number.isNaN(userId)) return reply.redirect('/authorize?error=Invalid+user');
   const target = await db.query.users.findFirst({ where: eq(users.userId, userId) });
-  if (!target || !target.approved) return reply.redirect('/authorizer?error=User+not+found');
+  if (!target || !target.approved) return reply.redirect('/authorize?error=User+not+found');
 
   if (action === 'grant') {
     // Taking over from another authorizer is allowed; the admin authorizer
@@ -833,7 +833,7 @@ async function authorizerAction(
       });
       if (other?.kind === 'admin') {
         return reply.redirect(
-          '/authorizer?error=That+member+has+unconditional+access+set+by+an+admin'
+          '/authorize?error=That+member+has+unconditional+access+set+by+an+admin'
         );
       }
     }
@@ -842,24 +842,24 @@ async function authorizerAction(
       .set({ authorizerId: me.authorizerId, authorized: true })
       .where(eq(users.userId, userId));
     return reply.redirect(
-      `/authorizer?success=${encodeURIComponent(`Granted access to ${target.name || target.phoneE164}`)}`
+      `/authorize?success=${encodeURIComponent(`Granted access to ${target.name || target.phoneE164}`)}`
     );
   }
 
   if (target.authorizerId !== me.authorizerId) {
-    return reply.redirect('/authorizer?error=You+can+only+revoke+members+you+authorized');
+    return reply.redirect('/authorize?error=You+can+only+revoke+members+you+authorized');
   }
   await db.update(users).set({ authorized: false }).where(eq(users.userId, userId));
   await revokeActivationsForUser(userId);
   return reply.redirect(
-    `/authorizer?success=${encodeURIComponent(`Revoked access for ${target.name || target.phoneE164}`)}`
+    `/authorize?success=${encodeURIComponent(`Revoked access for ${target.name || target.phoneE164}`)}`
   );
 }
 
-server.post('/authorizer/users/:userId/grant', (req, reply) =>
+server.post('/authorize/users/:userId/grant', (req, reply) =>
   authorizerAction(req, reply, 'grant')
 );
-server.post('/authorizer/users/:userId/revoke', (req, reply) =>
+server.post('/authorize/users/:userId/revoke', (req, reply) =>
   authorizerAction(req, reply, 'revoke')
 );
 

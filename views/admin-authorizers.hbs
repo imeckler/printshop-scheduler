@@ -14,7 +14,7 @@
         A user may only use the space while they are <em>authorized</em> by an authorizer that is
         currently <em>valid</em>. The built-in <strong>Admin</strong> authorizer is always valid
         (unconditional access). <strong>Discord</strong> authorizers sign themselves in at
-        <a href="/authorizer">/authorizer</a> and grant/revoke members there; they are valid only
+        <a href="/authorize">/authorize</a> and grant/revoke members there; they are valid only
         while they hold role <code>{{discordRoleId}}</code> in server <code>{{discordGuildId}}</code>.
         This is re-checked {{#if discordConfigured}}automatically{{else}}<strong>never — Discord is not configured (DISCORD_CLIENT_ID etc.)</strong>{{/if}}.
         When an authorizer becomes invalid (role lost, left the server, or revoked this app's
