@@ -15,6 +15,11 @@ export const MATERIALIZATION_HORIZON_DAYS = 90;
 // How early before a timeslot starts a user may activate the lock.
 export const ACTIVATION_GRACE_MINUTES = 15;
 
+// Printshop bookings are only allowed between these wall-clock hours
+// (in DEFAULT_TIMEZONE) on a single day.
+export const BOOKING_OPEN_HOUR = 6; // 6:00 AM
+export const BOOKING_CLOSE_HOUR = 22; // 10:00 PM
+
 // SQL predicate: user row alias `u` currently has effective access — their
 // authorizer has granted them AND the authorizer itself is still valid
 // (e.g. still holds the Discord role). Requires `authorizers a` joined on
@@ -414,6 +419,15 @@ export async function bookPrintshopSlot(
 ): Promise<{ eventId: number }> {
   if (end <= start) {
     throw new Error('End time must be after start time');
+  }
+
+  // Bookings must fall entirely within open hours on a single day (shop time).
+  const startLocal = moment.tz(start, DEFAULT_TIMEZONE);
+  const endLocal = moment.tz(end, DEFAULT_TIMEZONE);
+  const openTime = startLocal.clone().startOf('day').hour(BOOKING_OPEN_HOUR);
+  const closeTime = startLocal.clone().startOf('day').hour(BOOKING_CLOSE_HOUR);
+  if (startLocal.isBefore(openTime) || endLocal.isAfter(closeTime)) {
+    throw new Error('Bookings are only available between 6:00 AM and 10:00 PM');
   }
 
   return await db.transaction(async tx => {

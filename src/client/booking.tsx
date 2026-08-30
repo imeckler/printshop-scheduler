@@ -106,8 +106,8 @@ class BookingManager {
     const selectedDateStr = this.dateInput.value;
     const selectedDateLA = moment.tz(selectedDateStr, 'America/Los_Angeles');
 
-    const startDateLA = selectedDateLA.clone().hour(0).minute(0).second(0); // Start at 6 AM
-    const endDateLA = selectedDateLA.clone().hour(23).minute(0).second(0); // End at 11 PM
+    const startDateLA = selectedDateLA.clone().hour(6).minute(0).second(0); // Start at 6 AM
+    const endDateLA = selectedDateLA.clone().hour(22).minute(0).second(0); // End at 10 PM
 
     return {
       start: startDateLA.utc().toDate(),
@@ -154,8 +154,8 @@ class BookingManager {
 
     const selectedDateStr = this.dateInput.value;
     const selectedDateLA = moment.tz(selectedDateStr, 'America/Los_Angeles');
-    const start = selectedDateLA.clone().hour(0).minute(0).second(0); // Start at 6 AM
-    const end = selectedDateLA.clone().hour(23).minute(59).second(0); // Start at 6 AM
+    const start = selectedDateLA.clone().hour(6).minute(0).second(0); // Start at 6 AM
+    const end = selectedDateLA.clone().hour(22).minute(0).second(0); // End at 10 PM
 
     // Generate 15-minute time slots
     // const endMoment = moment.tz(end, 'America/Los_Angeles');
