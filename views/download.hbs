@@ -1,0 +1,62 @@
+<div class="container download-page">
+    <h2>Riso Layout desktop app</h2>
+    <p class="form-description">
+        The same layout and colour-separation tool as the <a href="/layout">Layout</a> page, as an app that
+        runs on your own computer: no upload, no waiting on the server, and a tab to keep track of which
+        inks are in stock.
+    </p>
+
+    {{#if error}}
+        <div class="alert alert-danger">{{error}}</div>
+    {{else if release}}
+        <p class="download-version">
+            Version <strong>{{release.version}}</strong>{{#if release.publishedDate}}, released {{release.publishedDate}}{{/if}}.
+        </p>
+
+        <div class="download-grid">
+            {{#each platforms}}
+                <div class="download-card">
+                    <h4>{{label}}</h4>
+                    {{#if assets.length}}
+                        {{#each assets}}
+                            <a class="btn {{#if @first}}btn-primary{{else}}btn-secondary{{/if}}" href="/download/{{id}}">
+                                Download .{{kind}}
+                            </a>
+                            <small class="form-text">{{arch}} · {{sizeLabel}}</small>
+                        {{/each}}
+                    {{else}}
+                        <p class="form-text">No build for this platform in this release.</p>
+                    {{/if}}
+                </div>
+            {{/each}}
+        </div>
+
+        <div class="download-notes">
+            <h4>Installing</h4>
+            <ul>
+                <li><strong>macOS:</strong> open the .dmg and drag Riso Layout to Applications. The app isn't signed with an
+                    Apple certificate, so the first time, right-click it and choose <em>Open</em> (or allow it under
+                    System Settings → Privacy &amp; Security).</li>
+                <li><strong>Windows:</strong> run the installer. SmartScreen may warn about an unknown publisher; choose
+                    <em>More info → Run anyway</em>.</li>
+                <li><strong>Linux:</strong> make the AppImage executable (<code>chmod +x</code>) and run it.</li>
+            </ul>
+            <p class="form-text">Builds come straight from the riso-utils GitHub releases.</p>
+        </div>
+
+        {{#if release.notes}}
+            <div class="download-notes">
+                <h4>Release notes</h4>
+                <pre class="release-notes">{{release.notes}}</pre>
+            </div>
+        {{/if}}
+    {{else}}
+        <div class="alert alert-info">
+            {{#if configured}}
+                No desktop release has been published yet. Check back soon.
+            {{else}}
+                Downloads aren't set up on this server (RISO_UTILS_GITHUB_TOKEN is not configured).
+            {{/if}}
+        </div>
+    {{/if}}
+</div>

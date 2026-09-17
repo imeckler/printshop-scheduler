@@ -846,6 +846,67 @@ th {
     flex: none;
 }
 
+.download-callout {
+    margin: -0.25rem 0 1rem;
+    padding: 0.6rem 0.9rem;
+    background: #eaf4fc;
+    border: 1px solid #bee5eb;
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.download-version {
+    margin-bottom: 1.5rem;
+}
+
+.download-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.download-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1.25rem;
+}
+
+.download-card h4 {
+    margin-bottom: 0.75rem;
+    color: #2c3e50;
+}
+
+.download-card .btn {
+    display: block;
+    text-align: center;
+    margin: 0 0 0.25rem;
+}
+
+.download-card .form-text {
+    margin-bottom: 0.75rem;
+}
+
+.download-notes {
+    margin-top: 1.5rem;
+}
+
+.download-notes ul {
+    margin: 0.5rem 0 0.75rem 1.25rem;
+}
+
+.download-notes li {
+    margin-bottom: 0.4rem;
+}
+
+.release-notes {
+    white-space: pre-wrap;
+    font-family: inherit;
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 4px;
+}
+
 .ink-hex {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.75rem;

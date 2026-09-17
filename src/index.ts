@@ -83,6 +83,14 @@ import {
   LayoutRequest,
   InkInfo,
 } from './lib/layout';
+import {
+  downloadsConfigured,
+  formatSize,
+  latestDesktopRelease,
+  openAsset,
+  PLATFORM_LABELS,
+  Platform,
+} from './lib/releases';
 
 const server = fastify().withTypeProvider<TypeBoxTypeProvider>();
 
@@ -1466,6 +1474,60 @@ server.get(
     );
     reply.header('Cache-Control', 'private, max-age=3600');
     return reply.send(require('fs').createReadStream(full));
+  }
+);
+
+// ---------------------------------------------------------------------
+// Desktop app downloads: the latest desktop-v* GitHub release of riso-utils,
+// listed and streamed through this server because that repo is private.
+// ---------------------------------------------------------------------
+
+server.get('/download', { preHandler: requirePermissions(['approved']) }, async (request, reply) => {
+  const base = { title: 'Download', user: { id: request.user!.userId, name: request.user!.name } };
+  try {
+    const release = await latestDesktopRelease();
+    const platforms = (['mac', 'windows', 'linux'] as Platform[]).map(p => ({
+      label: PLATFORM_LABELS[p],
+      assets: (release?.assets ?? [])
+        .filter(a => a.platform === p)
+        .map(a => ({ ...a, sizeLabel: formatSize(a.size) })),
+    }));
+    return reply.view('download', {
+      ...base,
+      configured: downloadsConfigured(),
+      release: release && {
+        ...release,
+        publishedDate: release.publishedAt ? new Date(release.publishedAt).toLocaleDateString('en-US', { dateStyle: 'long' }) : '',
+      },
+      platforms,
+    });
+  } catch (err) {
+    console.error('download page:', err);
+    return reply.view('download', {
+      ...base,
+      error: `Could not fetch the latest release: ${(err as Error).message}`,
+    });
+  }
+});
+
+server.get(
+  '/download/:assetId',
+  { preHandler: requirePermissions(['approved']) },
+  async (request, reply) => {
+    const id = parseInt((request.params as { assetId: string }).assetId, 10);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(404).send({ error: 'Not found' });
+    try {
+      const asset = await openAsset(id);
+      if (!asset) return reply.code(404).send({ error: 'Not found' });
+      reply.type(asset.contentType);
+      reply.header('Content-Disposition', `attachment; filename="${asset.name}"`);
+      if (asset.size !== null) reply.header('Content-Length', asset.size);
+      reply.header('Cache-Control', 'private, max-age=3600');
+      return reply.send(asset.body);
+    } catch (err) {
+      console.error('download asset failed:', err);
+      return reply.code(502).send({ error: 'Could not download the installer right now' });
+    }
   }
 );
 
