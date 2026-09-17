@@ -7,7 +7,7 @@
 # The token only exists in this throwaway stage; the app image gets the binary.
 FROM rust:1.88-alpine AS riso
 RUN apk add --no-cache musl-dev git
-ARG RISO_UTILS_REV=25c75fafeb78126d8d9fc32c3e15e720a2c0c2e2
+ARG RISO_UTILS_REV=3e0b56ff104777ee2e31e83c91f36a76059fdb68
 ARG RISO_UTILS_GITHUB_TOKEN
 WORKDIR /riso
 RUN test -n "$RISO_UTILS_GITHUB_TOKEN" \
