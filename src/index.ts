@@ -54,6 +54,7 @@ import {
   risographUsages,
   risoLastSeenTotals,
   authorizers,
+  inks,
 } from './lib/schema';
 import {
   refreshAuthorizer,
@@ -68,6 +69,20 @@ import Stripe from 'stripe';
 import { getConfig } from './lib/config';
 import { CookieSerializeOptions } from '@fastify/cookie';
 import { BookingMessage } from './lib/websocketTypes';
+import {
+  binaryAvailable as layoutBinaryAvailable,
+  createJobDir,
+  jobFilePath,
+  listInks,
+  planLayout,
+  removeJobDir,
+  renderLayout,
+  rgbToHex,
+  sniffImageType,
+  startJobCleanup,
+  LayoutRequest,
+  InkInfo,
+} from './lib/layout';
 
 const server = fastify().withTypeProvider<TypeBoxTypeProvider>();
 
@@ -95,6 +110,12 @@ server.register(websocket);
 
 // Register form parser for HTML forms
 server.register(require('@fastify/formbody'));
+
+// Multipart uploads (the /layout image). Fields and the file land on request.body.
+server.register(require('@fastify/multipart'), {
+  attachFieldsToBody: 'keyValues',
+  limits: { fileSize: 40 * 1024 * 1024, files: 1, fields: 20, fieldSize: 10 * 1024 },
+});
 
 // Add content type parser for Stripe webhooks (need raw body for signature verification)
 server.addContentTypeParser('application/json', { parseAs: 'buffer' }, function (req, body, done) {
@@ -612,6 +633,70 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
   } catch (error) {
     console.error('Error updating user:', error);
     return reply.redirect('/admin/users?error=Failed+to+update+user');
+  }
+});
+
+// ---------------------------------------------------------------------
+// Admin: inks stocked in the printshop (offered on /layout)
+// ---------------------------------------------------------------------
+
+server.get('/admin/inks', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+  const { success, error } = request.query as { success?: string; error?: string };
+  try {
+    const [rows, all] = await Promise.all([db.query.inks.findMany(), listInks()]);
+    const stocked = new Set(rows.map(r => r.name));
+    const families: {
+      family: string;
+      inks: { name: string; hex: string; available: boolean }[];
+    }[] = [];
+    for (const ink of all) {
+      let fam = families.find(f => f.family === ink.family);
+      if (!fam) {
+        fam = { family: ink.family, inks: [] };
+        families.push(fam);
+      }
+      fam.inks.push({ name: ink.name, hex: rgbToHex(ink.rgb), available: stocked.has(ink.name) });
+    }
+    return reply.view('admin-inks', {
+      title: 'Inks',
+      families,
+      availableCount: stocked.size,
+      success,
+      error,
+    });
+  } catch (err) {
+    console.error('admin inks: cannot list inks:', err);
+    return reply.view('admin-inks', {
+      families: [],
+      availableCount: 0,
+      error: `Could not list inks: ${(err as Error).message}`,
+    });
+  }
+});
+
+server.post('/admin/inks', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+  try {
+    const raw = (request.body as { inks?: string | string[] }).inks;
+    const chosen = new Set(Array.isArray(raw) ? raw : raw ? [raw] : []);
+    const known = new Set((await listInks()).map(i => i.name));
+    const unknown = [...chosen].filter(n => !known.has(n));
+    if (unknown.length) {
+      return reply.redirect(
+        `/admin/inks?error=${encodeURIComponent('Unknown ink: ' + unknown.join(', '))}`
+      );
+    }
+    await db.transaction(async tx => {
+      await tx.delete(inks);
+      if (chosen.size) await tx.insert(inks).values([...chosen].map(name => ({ name })));
+    });
+    return reply.redirect(
+      `/admin/inks?success=${encodeURIComponent(`${chosen.size} inks marked available`)}`
+    );
+  } catch (err) {
+    console.error('admin inks update failed:', err);
+    return reply.redirect('/admin/inks?error=Failed+to+save+inks');
   }
 });
 
@@ -1208,6 +1293,181 @@ server.get('/book', { preHandler: requirePermissions(['printshop']) }, async (re
     balance: balance?.balanceCents || 0,
   });
 });
+
+// ---------------------------------------------------------------------
+// Layout tool: tile copies of an image on a sheet, one PDF plate per ink.
+// The maths and colour separation live in the riso-layout binary
+// (riso-utils); see src/lib/layout.ts.
+// ---------------------------------------------------------------------
+
+const TABLOID = { w: 11, h: 17 };
+const TABLOID_PRINTABLE = { w: 10.777, h: 16.722 };
+const MAX_INKS = 4;
+
+interface AvailableInk extends InkInfo {
+  hex: string;
+}
+
+// Inks stocked in the printshop (admin-managed) joined with the binary's ink table.
+async function getAvailableInks(): Promise<AvailableInk[]> {
+  const [rows, all] = await Promise.all([db.query.inks.findMany(), listInks()]);
+  const stocked = new Set(rows.map(r => r.name));
+  return all.filter(i => stocked.has(i.name)).map(i => ({ ...i, hex: rgbToHex(i.rgb) }));
+}
+
+server.get('/layout', { preHandler: requirePermissions(['approved']) }, async (request, reply) => {
+  const userId = request.user!.userId;
+  let availableInks: AvailableInk[] = [];
+  let unavailable: string | undefined;
+  try {
+    availableInks = await getAvailableInks();
+  } catch (err) {
+    console.error('layout: cannot list inks:', err);
+    unavailable = layoutBinaryAvailable()
+      ? 'The layout tool is not working right now (could not list inks).'
+      : 'The layout tool is not installed on this server.';
+  }
+  return reply.view('layout', {
+    title: 'Layout',
+    user: { id: userId, name: request.user!.name },
+    inks: availableInks,
+    printable: TABLOID_PRINTABLE,
+    unavailable,
+    configJson: JSON.stringify({
+      inks: availableInks.map(i => ({ name: i.name, hex: i.hex })),
+      paper: TABLOID,
+      printable: TABLOID_PRINTABLE,
+      maxInks: MAX_INKS,
+    }),
+  });
+});
+
+const LayoutGoalSchema = Type.Object({
+  kind: Type.Union([Type.Literal('width'), Type.Literal('height'), Type.Literal('copies')]),
+  value: Type.Number(),
+});
+
+server.post(
+  '/layout/plan',
+  {
+    preHandler: requirePermissions(['approved']),
+    schema: {
+      body: Type.Object({
+        widthPx: Type.Integer({ minimum: 1 }),
+        heightPx: Type.Integer({ minimum: 1 }),
+        margin: Type.Number({ minimum: 0 }),
+        allowRotate: Type.Boolean(),
+        goal: LayoutGoalSchema,
+      }),
+    },
+  },
+  async (request, reply) => {
+    const { widthPx, heightPx, margin, allowRotate, goal } = request.body;
+    try {
+      const result = await planLayout([widthPx, heightPx], { margin, allowRotate, goal });
+      return reply.send(result);
+    } catch (err) {
+      console.error('layout plan failed:', err);
+      return reply
+        .code(400)
+        .send({ ok: false, error: { kind: 'invalid', message: (err as Error).message } });
+    }
+  }
+);
+
+server.post(
+  '/layout/render',
+  { preHandler: requirePermissions(['approved']) },
+  async (request, reply) => {
+    const userId = request.user!.userId;
+    const body = (request.body || {}) as Record<string, unknown>;
+    const image = body.image;
+    if (!Buffer.isBuffer(image) || image.length === 0) {
+      return reply.code(400).send({ ok: false, error: 'No image uploaded' });
+    }
+    const ext = sniffImageType(image);
+    if (!ext) return reply.code(400).send({ ok: false, error: 'Upload a PNG or JPEG image' });
+
+    const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string) : '');
+    const goalKind = str('goalKind');
+    if (goalKind !== 'width' && goalKind !== 'height' && goalKind !== 'copies') {
+      return reply.code(400).send({ ok: false, error: 'Choose a size or a number of copies' });
+    }
+    const req: LayoutRequest = {
+      margin: parseFloat(str('margin')),
+      allowRotate: str('allowRotate') !== 'false',
+      goal: { kind: goalKind, value: parseFloat(str('goalValue')) },
+    };
+    if (!Number.isFinite(req.margin) || !Number.isFinite(req.goal.value)) {
+      return reply.code(400).send({ ok: false, error: 'Margin and size/copies must be numbers' });
+    }
+
+    const inkNames = str('inks')
+      .split(',')
+      .map(n => n.trim())
+      .filter(Boolean);
+    if (inkNames.length < 1 || inkNames.length > MAX_INKS) {
+      return reply.code(400).send({ ok: false, error: `Choose between 1 and ${MAX_INKS} inks` });
+    }
+    const available = await getAvailableInks();
+    const byName = new Map(available.map(i => [i.name, i]));
+    const unknown = inkNames.filter(n => !byName.has(n));
+    if (unknown.length) {
+      return reply
+        .code(400)
+        .send({ ok: false, error: `Not available in the printshop: ${unknown.join(', ')}` });
+    }
+
+    const job = createJobDir(userId);
+    try {
+      const inputPath = path.join(job.dir, `input.${ext}`);
+      require('fs').writeFileSync(inputPath, image);
+      const result = await renderLayout(inputPath, job.dir, inkNames, req);
+      if (!result.ok) {
+        removeJobDir(job.id);
+        return reply.code(422).send({ ok: false, error: result.error });
+      }
+      const url = (file: string) => `/layout/jobs/${job.id}/${file}`;
+      const r = result.result;
+      return reply.send({
+        ok: true,
+        jobId: job.id,
+        layout: r.layout,
+        plates: r.plates.map(p => ({
+          ink: p.ink,
+          hex: byName.get(p.ink)?.hex ?? rgbToHex(p.rgb),
+          density: p.density,
+          file: p.file,
+          url: url(p.file),
+        })),
+        previewPdf: r.preview_pdf ? url(r.preview_pdf) : null,
+        previewPng: r.preview_png ? url(r.preview_png) : null,
+      });
+    } catch (err) {
+      console.error('layout render failed:', err);
+      removeJobDir(job.id);
+      return reply.code(500).send({ ok: false, error: (err as Error).message });
+    }
+  }
+);
+
+server.get(
+  '/layout/jobs/:jobId/:file',
+  { preHandler: requirePermissions(['approved']) },
+  async (request, reply) => {
+    const { jobId, file } = request.params as { jobId: string; file: string };
+    const full = jobFilePath(jobId, request.user!.userId, file);
+    if (!full) return reply.code(404).send({ error: 'Not found' });
+    const download = (request.query as { download?: string }).download === '1';
+    reply.type(file.endsWith('.pdf') ? 'application/pdf' : 'image/png');
+    reply.header(
+      'Content-Disposition',
+      `${download ? 'attachment' : 'inline'}; filename="${file}"`
+    );
+    reply.header('Cache-Control', 'private, max-age=3600');
+    return reply.send(require('fs').createReadStream(full));
+  }
+);
 
 server.get(
   '/my-bookings',
@@ -2192,6 +2452,7 @@ async function start() {
   try {
     // Initialize database and run migrations
     await initializeDatabase();
+    startJobCleanup();
 
     // Materialize recurring events now and daily thereafter
     startMaterializationTimer();

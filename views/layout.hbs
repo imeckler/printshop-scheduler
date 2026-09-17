@@ -1,0 +1,102 @@
+<div class="container layout-page">
+    <h2>Layout &amp; colour separation</h2>
+    <p class="form-description">
+        Upload an image, pick the inks you'll print with, and choose either the size of each copy or how
+        many copies you want per sheet. You get one PDF per ink (tabloid, 11×17 in, printable area
+        {{printable.w}}×{{printable.h}} in) with the copies laid out in a grid, ready to make stencils from.
+    </p>
+
+    {{#if unavailable}}
+        <div class="alert alert-danger">{{unavailable}}</div>
+    {{/if}}
+    {{#unless inks.length}}
+        <div class="alert alert-info">No inks are marked as available in the printshop yet. Ask an admin to set them at <code>/admin/inks</code>.</div>
+    {{/unless}}
+
+    <div class="layout-grid">
+        <div class="layout-controls">
+            <div class="form-group">
+                <label for="imageFile">Image (PNG or JPEG; other formats are converted in your browser)</label>
+                <input type="file" id="imageFile" accept="image/*">
+                <small class="form-text" id="imageInfo">No image selected.</small>
+            </div>
+
+            <div class="form-group">
+                <label>Inks (up to 4)</label>
+                <div class="ink-list" id="inkList">
+                    {{#each inks}}
+                        <label class="ink-chip">
+                            <input type="checkbox" name="inks" value="{{name}}">
+                            <span class="ink-swatch" style="background: {{hex}}"></span>
+                            <span>{{name}}</span>
+                        </label>
+                    {{/each}}
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="margin">Margin between copies (in)</label>
+                    <input type="number" id="margin" value="0.1" min="0" step="0.05">
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <label class="checkbox-inline"><input type="checkbox" id="allowRotate" checked> Allow rotating copies 90°</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Fit by</label>
+                <div class="mode-row">
+                    <label class="checkbox-inline"><input type="radio" name="mode" value="size" checked> Size of each copy</label>
+                    <label class="checkbox-inline"><input type="radio" name="mode" value="copies"> Copies per sheet</label>
+                </div>
+            </div>
+
+            <div class="form-row" id="sizeInputs">
+                <div class="form-group">
+                    <label for="width">Width (in)</label>
+                    <input type="number" id="width" min="0.1" step="0.05" placeholder="e.g. 4">
+                </div>
+                <div class="form-group">
+                    <label for="height">Height (in)</label>
+                    <input type="number" id="height" min="0.1" step="0.05" placeholder="auto">
+                </div>
+            </div>
+            <div class="form-row" id="copiesInputs" style="display: none;">
+                <div class="form-group">
+                    <label for="copies">Copies per sheet</label>
+                    <input type="number" id="copies" min="1" step="1" value="4">
+                </div>
+            </div>
+
+            <div id="planSummary" class="plan-summary"></div>
+
+            <div class="form-actions">
+                <button type="button" id="renderBtn" class="btn btn-primary" disabled>Generate plates</button>
+            </div>
+            <div id="renderStatus" class="form-text"></div>
+        </div>
+
+        <div class="layout-preview">
+            <h4>Sheet preview</h4>
+            <div id="sheetPreview" class="sheet-preview"></div>
+        </div>
+    </div>
+
+    <div id="results" class="layout-results" style="display: none;">
+        <h3>Plates</h3>
+        <p class="form-text">Each plate is a greyscale PDF where black = full ink coverage. Print each one to its stencil.</p>
+        <ul id="plateList" class="plate-list"></ul>
+        <div class="render-preview">
+            <h4>Soft proof</h4>
+            <img id="previewImage" alt="Preview of the printed sheet">
+            <p><a id="previewPdfLink" href="#" target="_blank">Open preview PDF</a></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.LAYOUT_CONFIG = {{{configJson}}};
+</script>
+<script src="/public/js/layout.js"></script>

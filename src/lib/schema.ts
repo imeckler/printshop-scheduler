@@ -358,6 +358,14 @@ export const creditBalancesRelations = relations(creditBalances, ({ one }) => ({
   }),
 }));
 
+// Inks currently stocked in the printshop, by RISO ink name (as listed by
+// `riso-layout inks`). A row means the ink is available; /layout only offers
+// these. Managed at /admin/inks.
+export const inks = pgTable('inks', {
+  name: text('name').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const risographUsages = pgTable('risograph_usages', {
   usageId: bigserial('usage_id', { mode: 'number' }).primaryKey(),
   userId: bigint('user_id', { mode: 'number' })

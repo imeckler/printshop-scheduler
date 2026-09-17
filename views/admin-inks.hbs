@@ -1,0 +1,54 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Printshop Inks</h2>
+        <div>
+            <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
+    {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
+
+    <p class="help">
+        Tick the inks currently stocked in the printshop. Members can only choose from these on the
+        <a href="/layout">layout tool</a>. Currently available: <strong id="availableCount">{{availableCount}}</strong>.
+    </p>
+
+    <form method="POST" action="/admin/inks" id="inksForm">
+        <div class="form-actions" style="justify-content: flex-start; border: 0; padding: 0; margin: 0 0 1rem 0;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setAll(true)">Select all</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="setAll(false)">Clear</button>
+        </div>
+
+        {{#each families}}
+            <div class="form-section">
+                <h4>{{family}}</h4>
+                <div class="ink-list">
+                    {{#each inks}}
+                        <label class="ink-chip">
+                            <input type="checkbox" name="inks" value="{{name}}" {{#if available}}checked{{/if}}>
+                            <span class="ink-swatch" style="background: {{hex}}"></span>
+                            <span>{{name}}</span>
+                        </label>
+                    {{/each}}
+                </div>
+            </div>
+        {{/each}}
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save available inks</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function setAll(on) {
+        document.querySelectorAll('#inksForm input[name="inks"]').forEach(function (cb) { cb.checked = on; });
+        updateCount();
+    }
+    function updateCount() {
+        var n = document.querySelectorAll('#inksForm input[name="inks"]:checked').length;
+        document.getElementById('availableCount').textContent = n;
+    }
+    document.getElementById('inksForm').addEventListener('change', updateCount);
+</script>
