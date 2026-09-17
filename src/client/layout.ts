@@ -398,7 +398,7 @@ class LayoutPage {
       li.className = 'plate-item';
       li.innerHTML =
         `<span class="ink-swatch" style="background: ${escapeHtml(p.hex)}"></span>` +
-        `<span class="plate-name">${escapeHtml(p.ink)}</span>` +
+        `<span class="plate-name">${escapeHtml(p.ink)} <code class="ink-hex">${escapeHtml(p.hex)}</code></span>` +
         `<span class="plate-density">${(p.density * 100).toFixed(1)}% coverage</span>` +
         `<a class="btn btn-sm btn-primary" href="${escapeHtml(p.url)}" target="_blank">Open PDF</a>` +
         `<a class="btn btn-sm btn-secondary" href="${escapeHtml(p.url)}?download=1">Download</a>`;
