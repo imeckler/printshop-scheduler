@@ -1355,14 +1355,27 @@ const LayoutGoalSchema = Type.Object({
   value: Type.Number(),
 });
 
+// A raster image in pixels, or a PDF page in inches (the browser reads the page size).
+const LayoutSourceSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal('pixels'),
+    w: Type.Integer({ minimum: 1 }),
+    h: Type.Integer({ minimum: 1 }),
+  }),
+  Type.Object({
+    kind: Type.Literal('inches'),
+    w: Type.Number({ exclusiveMinimum: 0 }),
+    h: Type.Number({ exclusiveMinimum: 0 }),
+  }),
+]);
+
 server.post(
   '/layout/plan',
   {
     preHandler: requirePermissions(['approved']),
     schema: {
       body: Type.Object({
-        widthPx: Type.Integer({ minimum: 1 }),
-        heightPx: Type.Integer({ minimum: 1 }),
+        source: LayoutSourceSchema,
         margin: Type.Number({ minimum: 0 }),
         allowRotate: Type.Boolean(),
         goal: LayoutGoalSchema,
@@ -1370,9 +1383,9 @@ server.post(
     },
   },
   async (request, reply) => {
-    const { widthPx, heightPx, margin, allowRotate, goal } = request.body;
+    const { source, margin, allowRotate, goal } = request.body;
     try {
-      const result = await planLayout([widthPx, heightPx], { margin, allowRotate, goal });
+      const result = await planLayout(source, { margin, allowRotate, goal });
       return reply.send(result);
     } catch (err) {
       console.error('layout plan failed:', err);
@@ -1394,7 +1407,7 @@ server.post(
       return reply.code(400).send({ ok: false, error: 'No image uploaded' });
     }
     const ext = sniffImageType(image);
-    if (!ext) return reply.code(400).send({ ok: false, error: 'Upload a PNG or JPEG image' });
+    if (!ext) return reply.code(400).send({ ok: false, error: 'Upload a PNG, JPEG or PDF' });
 
     const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string) : '');
     const goalKind = str('goalKind');
@@ -1450,6 +1463,8 @@ server.post(
         })),
         previewPdf: r.preview_pdf ? url(r.preview_pdf) : null,
         previewPng: r.preview_png ? url(r.preview_png) : null,
+        warnings: r.warnings,
+        pages: r.pages,
       });
     } catch (err) {
       console.error('layout render failed:', err);

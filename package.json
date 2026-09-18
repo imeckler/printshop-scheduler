@@ -38,6 +38,7 @@
     "hono": "^4.7.11",
     "jsonwebtoken": "^9.0.2",
     "moment-timezone": "^0.6.0",
+    "pdfjs-dist": "^5.7.284",
     "pg": "^8.16.0",
     "puppeteer": "^24.16.1",
     "rrule": "^2.8.1",

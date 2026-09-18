@@ -5,9 +5,10 @@
         running on your own computer.
     </p>
     <p class="form-description">
-        Upload an image, pick the inks you'll print with, and choose either the size of each copy or how
+        Upload an image or a PDF, pick the inks you'll print with, and choose either the size of each copy or how
         many copies you want per sheet. You get one PDF per ink (tabloid, 11×17 in, printable area
         {{printable.w}}×{{printable.h}} in) with the copies laid out in a grid, ready to make stencils from.
+        PDFs stay vector: text and shapes are separated as-is, and only embedded photos are rasterised.
     </p>
 
     {{#if unavailable}}
@@ -20,8 +21,8 @@
     <div class="layout-grid">
         <div class="layout-controls">
             <div class="form-group">
-                <label for="imageFile">Image (PNG or JPEG; other formats are converted in your browser)</label>
-                <input type="file" id="imageFile" accept="image/*">
+                <label for="imageFile">Image or PDF (PNG, JPEG or PDF; other image formats are converted in your browser)</label>
+                <input type="file" id="imageFile" accept="image/*,application/pdf">
                 <small class="form-text" id="imageInfo">No image selected.</small>
             </div>
 
@@ -92,6 +93,7 @@
     <div id="results" class="layout-results" style="display: none;">
         <h3>Plates</h3>
         <p class="form-text">Each plate is a greyscale PDF where black = full ink coverage. Print each one to its stencil.</p>
+        <ul id="renderWarnings" class="render-warnings" style="display: none;"></ul>
         <ul id="plateList" class="plate-list"></ul>
         <div class="render-preview">
             <h4>Soft proof</h4>

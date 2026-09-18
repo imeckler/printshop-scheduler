@@ -19,8 +19,11 @@ export interface Placement {
   y: number;
 }
 
+/** What is being tiled: a raster image (pixels) or a vector PDF page (inches). */
+export type LayoutSource = { kind: 'pixels'; w: number; h: number } | { kind: 'inches'; w: number; h: number };
+
 export interface Layout {
-  image_px: [number, number];
+  source: LayoutSource;
   copies: number;
   cols: number;
   rows: number;
@@ -32,7 +35,8 @@ export interface Layout {
   grid_w: number;
   grid_h: number;
   margin: number;
-  dpi: number;
+  /** Effective print resolution; null for vector (PDF) sources. */
+  dpi: number | null;
   paper_w: number;
   paper_h: number;
   printable_w: number;
@@ -69,14 +73,20 @@ export interface PlateInfo {
   ink: string;
   rgb: [number, number, number];
   file: string;
-  density: number;
+  /** Ink coverage 0..1; null for vector (PDF) sources. */
+  density: number | null;
 }
 
 export interface RenderOutput {
   layout: Layout;
   plates: PlateInfo[];
   preview_pdf: string | null;
+  /** Only produced for raster input. */
   preview_png: string | null;
+  /** PDF features the separator left untouched, and multi-page notices. */
+  warnings: string[];
+  /** Page count of a PDF input (only the first page is laid out). */
+  pages: number | null;
 }
 
 export type RenderResult =
@@ -211,21 +221,27 @@ function goalArgs(req: LayoutRequest): string[] {
   return args;
 }
 
-/** Layout only (no image decoding): fast enough to call on every form change. */
-export async function planLayout(
-  imagePx: [number, number],
-  req: LayoutRequest
-): Promise<PlanResult> {
-  const [w, h] = imagePx;
-  if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0) {
-    throw new Error('image size must be positive integers');
+/** Layout only (no file decoding): fast enough to call on every form change. */
+export async function planLayout(source: LayoutSource, req: LayoutRequest): Promise<PlanResult> {
+  const { w, h } = source;
+  let sourceArgs: string[];
+  if (source.kind === 'pixels') {
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0) {
+      throw new Error('image size must be positive integers');
+    }
+    sourceArgs = ['--image-px', `${w}x${h}`];
+  } else {
+    if (!(Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0)) {
+      throw new Error('page size must be positive');
+    }
+    sourceArgs = ['--size-in', `${w}x${h}`];
   }
-  const r = await run(['plan', '--image-px', `${w}x${h}`, ...goalArgs(req)], 20_000);
+  const r = await run(['plan', ...sourceArgs, ...goalArgs(req)], 20_000);
   if (r.code === 2 || (r.code !== 0 && r.code !== 1)) throw usageError(r, 'plan');
   return parseJson<PlanResult>(r, 'plan');
 }
 
-/** Separate `imagePath` into the given inks and write the plates into `outDir`. */
+/** Separate `imagePath` (PNG, JPEG or PDF) into the given inks and write the plates into `outDir`. */
 export async function renderLayout(
   imagePath: string,
   outDir: string,
@@ -258,6 +274,7 @@ const JOB_ROOT = path.join(os.tmpdir(), 'printshop-layout');
 const JOB_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const JOB_ID_RE = /^[a-f0-9]{24}$/;
 const JOB_FILE_RE = /^[a-z0-9][a-z0-9.-]*\.(pdf|png)$/;
+export type UploadKind = 'png' | 'jpg' | 'pdf';
 
 export function createJobDir(userId: number): { id: string; dir: string } {
   const id = crypto.randomBytes(12).toString('hex');
@@ -314,8 +331,8 @@ export function startJobCleanup() {
   cleanupTimer.unref();
 }
 
-/** 'png' | 'jpg' from the file's magic bytes, or null for anything else. */
-export function sniffImageType(buf: Buffer): 'png' | 'jpg' | null {
+/** 'png' | 'jpg' | 'pdf' from the file's magic bytes, or null for anything else. */
+export function sniffImageType(buf: Buffer): UploadKind | null {
   if (
     buf.length >= 8 &&
     buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
@@ -323,5 +340,6 @@ export function sniffImageType(buf: Buffer): 'png' | 'jpg' | null {
     return 'png';
   }
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length >= 5 && buf.subarray(0, 5).equals(Buffer.from('%PDF-'))) return 'pdf';
   return null;
 }

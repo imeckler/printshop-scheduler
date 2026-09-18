@@ -34,6 +34,12 @@ async function build() {
       sourcemap: true,
     });
 
+    // pdf.js does its parsing in a worker that must be a separate file (used by /layout).
+    fs.copyFileSync(
+      require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs'),
+      path.join('public/js', 'pdf.worker.min.mjs')
+    );
+
     console.log('Client scripts built successfully!');
   } catch (error) {
     console.error('Build failed:', error);

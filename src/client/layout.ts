@@ -1,5 +1,9 @@
-// /layout page: collect the image + options, show the sheet layout computed by
-// the server (riso-layout binary) live, and request the plate PDFs.
+// /layout page: collect the image or PDF + options, show the sheet layout
+// computed by the server (riso-layout binary) live, and request the plate PDFs.
+// The legacy build supports older browsers (the modern one needs very recent JS features).
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+pdfjs.GlobalWorkerOptions.workerSrc = '/public/js/pdf.worker.min.mjs';
 
 interface InkOption {
   name: string;
@@ -18,8 +22,11 @@ interface Placement {
   y: number;
 }
 
+/** A raster image in pixels or a PDF page in inches; mirrors src/lib/layout.ts. */
+type LayoutSource = { kind: 'pixels'; w: number; h: number } | { kind: 'inches'; w: number; h: number };
+
 interface Layout {
-  image_px: [number, number];
+  source: LayoutSource;
   copies: number;
   cols: number;
   rows: number;
@@ -28,7 +35,7 @@ interface Layout {
   copy_h: number;
   cell_w: number;
   cell_h: number;
-  dpi: number;
+  dpi: number | null;
   paper_w: number;
   paper_h: number;
   printable_w: number;
@@ -51,9 +58,11 @@ interface RenderResponse {
   error?: LayoutError | string;
   jobId?: string;
   layout?: Layout;
-  plates?: { ink: string; hex: string; density: number; url: string; file: string }[];
+  plates?: { ink: string; hex: string; density: number | null; url: string; file: string }[];
   previewPdf?: string | null;
   previewPng?: string | null;
+  warnings?: string[];
+  pages?: number | null;
 }
 
 declare global {
@@ -63,6 +72,18 @@ declare global {
 }
 
 const RECOMMENDED_DPI = 300;
+/** Longest side of the PDF thumbnail drawn in the sheet preview. */
+const PDF_THUMB_PX = 1000;
+
+interface LoadedFile {
+  /** Bytes as they will be uploaded (PNG/JPEG/PDF). */
+  blob: Blob;
+  ext: 'png' | 'jpg' | 'pdf';
+  name: string;
+  source: LayoutSource;
+  /** Object URL of a raster preview (the image itself, or the PDF's first page). */
+  url: string;
+}
 
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -91,11 +112,11 @@ class LayoutPage {
   private renderStatus = $<HTMLElement>('renderStatus');
   private results = $<HTMLElement>('results');
   private plateList = $<HTMLElement>('plateList');
+  private renderWarnings = $<HTMLElement>('renderWarnings');
   private previewImage = $<HTMLImageElement>('previewImage');
   private previewPdfLink = $<HTMLAnchorElement>('previewPdfLink');
 
-  /** The image as it will be uploaded (PNG/JPEG), plus its pixel size and a URL for the preview. */
-  private image: { blob: Blob; name: string; w: number; h: number; url: string } | null = null;
+  private image: LoadedFile | null = null;
   private layout: Layout | null = null;
   /** Which of width/height the user last typed; the other one follows the aspect ratio. */
   private sizeDriver: 'width' | 'height' = 'width';
@@ -165,48 +186,93 @@ class LayoutPage {
       this.updateRenderButton();
       return;
     }
-    this.imageInfo.textContent = 'Reading image…';
+    this.imageInfo.textContent = 'Reading file…';
     try {
-      const { blob, w, h } = await this.prepareImage(file);
-      this.image = { blob, name: file.name, w, h, url: URL.createObjectURL(blob) };
-      this.imageInfo.textContent = `${file.name}: ${w} × ${h} px`;
-      // Default size: fit the width of the printable area, or keep what the user typed.
+      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+      const loaded = isPdf ? await this.preparePdf(file) : await this.prepareImage(file);
+      this.image = loaded.file;
+      this.imageInfo.textContent = loaded.info;
+      // Default size: a PDF prints at its own size; an image at 4 in wide. Keep what the user typed.
       if (!this.widthInput.value && !this.heightInput.value) {
-        this.widthInput.value = fmt(Math.min(4, this.config.printable.w));
+        const natural = this.image.source.kind === 'inches' ? this.image.source.w : 4;
+        this.widthInput.value = fmt(Math.min(natural, this.config.printable.w), 3);
         this.sizeDriver = 'width';
       }
       this.syncSize();
       this.schedulePlan();
     } catch (err) {
-      this.imageInfo.textContent = `Could not read image: ${(err as Error).message}`;
+      this.imageInfo.textContent = `Could not read file: ${(err as Error).message}`;
       this.drawSheet(null);
     }
     this.updateRenderButton();
   }
 
+  /** Read the first page's size (after /Rotate) and draw it to a PNG for the sheet preview. */
+  private async preparePdf(file: File): Promise<{ file: LoadedFile; info: string }> {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const pdf = await pdfjs.getDocument({ data }).promise;
+    try {
+      const page = await pdf.getPage(1);
+      const base = page.getViewport({ scale: 1 });
+      const wIn = base.width / 72;
+      const hIn = base.height / 72;
+      const scale = PDF_THUMB_PX / Math.max(base.width, base.height);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas unavailable');
+      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+      const thumb = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!thumb) throw new Error('could not draw the page');
+      const pages = pdf.numPages;
+      const info =
+        `${file.name}: ${fmt(wIn, 3)} × ${fmt(hIn, 3)} in` +
+        (pages > 1 ? ` · ${pages} pages, only the first will be used` : '');
+      return {
+        file: {
+          blob: file,
+          ext: 'pdf',
+          name: file.name,
+          source: { kind: 'inches', w: wIn, h: hIn },
+          url: URL.createObjectURL(thumb),
+        },
+        info,
+      };
+    } finally {
+      await pdf.destroy();
+    }
+  }
+
   /** Decode in the browser to learn the size; re-encode anything that isn't PNG/JPEG as PNG. */
-  private async prepareImage(file: File): Promise<{ blob: Blob; w: number; h: number }> {
+  private async prepareImage(file: File): Promise<{ file: LoadedFile; info: string }> {
     const bitmap = await createImageBitmap(file);
     const { width: w, height: h } = bitmap;
-    if (file.type === 'image/png' || file.type === 'image/jpeg') {
-      bitmap.close();
-      return { blob: file, w, h };
+    let blob: Blob = file;
+    let ext: 'png' | 'jpg' = file.type === 'image/jpeg' ? 'jpg' : 'png';
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas unavailable');
+      ctx.drawImage(bitmap, 0, 0);
+      const png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!png) throw new Error('could not convert image to PNG');
+      blob = png;
+      ext = 'png';
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('canvas unavailable');
-    ctx.drawImage(bitmap, 0, 0);
     bitmap.close();
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) throw new Error('could not convert image to PNG');
-    return { blob, w, h };
+    return {
+      file: { blob, ext, name: file.name, source: { kind: 'pixels', w, h }, url: URL.createObjectURL(blob) },
+      info: `${file.name}: ${w} × ${h} px`,
+    };
   }
 
   private syncSize() {
     if (!this.image) return;
-    const aspect = this.image.w / this.image.h;
+    const aspect = this.image.source.w / this.image.source.h;
     if (this.sizeDriver === 'width') {
       const w = parseFloat(this.widthInput.value);
       this.heightInput.value = w > 0 ? fmt(w / aspect, 3) : '';
@@ -262,7 +328,7 @@ class LayoutPage {
       const res = await fetch('/layout/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ widthPx: this.image.w, heightPx: this.image.h, ...req }),
+        body: JSON.stringify({ source: this.image.source, ...req }),
       });
       if (seq !== this.planSeq) return;
       if (!res.ok)
@@ -291,10 +357,10 @@ class LayoutPage {
     const parts = [
       `<strong>${l.copies} ${l.copies === 1 ? 'copy' : 'copies'}</strong> per sheet in a ${l.cols} × ${l.rows} grid${l.rotated ? ' (rotated 90°)' : ''}`,
       `each ${fmt(l.copy_w, 3)} × ${fmt(l.copy_h, 3)} in`,
-      `${Math.round(l.dpi)} dpi`,
+      l.dpi === null ? 'vector' : `${Math.round(l.dpi)} dpi`,
     ];
     let warn = '';
-    if (l.dpi < RECOMMENDED_DPI) {
+    if (l.dpi !== null && l.dpi < RECOMMENDED_DPI) {
       warn = `<div class="text-warning">Low resolution: ${Math.round(l.dpi)} dpi at this size. ${RECOMMENDED_DPI}+ dpi is recommended for crisp prints; use a smaller size or a larger image.</div>`;
     }
     this.summary.innerHTML = parts.join(' · ') + warn;
@@ -363,11 +429,10 @@ class LayoutPage {
     form.append('goalKind', goal.kind);
     form.append('goalValue', String(goal.value));
     form.append('inks', inks.join(','));
-    const ext = this.image.blob.type === 'image/jpeg' ? 'jpg' : 'png';
-    form.append('image', this.image.blob, `image.${ext}`);
+    form.append('image', this.image.blob, `image.${this.image.ext}`);
 
     this.renderBtn.disabled = true;
-    this.renderStatus.textContent = `Separating into ${inks.length} ink${inks.length > 1 ? 's' : ''} and building PDFs… this can take a little while for large images.`;
+    this.renderStatus.textContent = `Separating into ${inks.length} ink${inks.length > 1 ? 's' : ''} and building PDFs… this can take a little while for large files.`;
     this.results.style.display = 'none';
     try {
       const res = await fetch('/layout/render', { method: 'POST', body: form });
@@ -399,11 +464,20 @@ class LayoutPage {
       li.innerHTML =
         `<span class="ink-swatch" style="background: ${escapeHtml(p.hex)}"></span>` +
         `<span class="plate-name">${escapeHtml(p.ink)} <code class="ink-hex">${escapeHtml(p.hex)}</code></span>` +
-        `<span class="plate-density">${(p.density * 100).toFixed(1)}% coverage</span>` +
+        `<span class="plate-density">${p.density === null ? 'vector plate' : `${(p.density * 100).toFixed(1)}% coverage`}</span>` +
         `<a class="btn btn-sm btn-primary" href="${escapeHtml(p.url)}" target="_blank">Open PDF</a>` +
         `<a class="btn btn-sm btn-secondary" href="${escapeHtml(p.url)}?download=1">Download</a>`;
       this.plateList.appendChild(li);
     }
+    const warnings = data.warnings ?? [];
+    this.renderWarnings.replaceChildren(
+      ...warnings.map(w => {
+        const li = document.createElement('li');
+        li.textContent = w;
+        return li;
+      })
+    );
+    this.renderWarnings.style.display = warnings.length ? '' : 'none';
     if (data.previewPng) {
       this.previewImage.src = data.previewPng;
       this.previewImage.style.display = '';
