@@ -66,7 +66,7 @@ function headers(accept = 'application/vnd.github+json'): Record<string, string>
 
 /** Map an installer's file name (see desktop/electron-builder.yml artifactName) to a platform. */
 export function classifyAsset(a: GhAsset): DesktopAsset | null {
-  const m = /^riso-layout-[\w.-]+?-(mac|win|linux)-(universal|x64|arm64)\.(dmg|zip|exe|AppImage)$/.exec(
+  const m = /^riso-layout-[\w.-]+?-(mac|win|linux)-(universal|x64|x86_64|arm64)\.(dmg|zip|exe|AppImage)$/.exec(
     a.name
   );
   if (!m) return null;
