@@ -1,10 +1,8 @@
 // Desktop app downloads. The installers are built by riso-utils' GitHub
 // Actions workflow and attached to GitHub releases tagged desktop-v*. That
 // repo is private, so this module lists the latest release through the GitHub
-// API with RISO_UTILS_GITHUB_TOKEN and streams the assets to the browser;
-// nothing is copied into this repo.
-import { Readable } from 'stream';
-
+// API with RISO_UTILS_GITHUB_TOKEN and sends the browser to GitHub's signed
+// download URL for each asset; nothing is copied or proxied.
 const REPO = 'imeckler/riso-utils';
 const TAG_PREFIX = 'desktop-v';
 const CACHE_MS = 10 * 60 * 1000;
@@ -104,41 +102,25 @@ export function clearReleaseCache() {
   cache = null;
 }
 
-export interface AssetStream {
-  name: string;
-  size: number | null;
-  contentType: string;
-  body: Readable;
-}
-
 /**
- * Open an installer for streaming. `id` must belong to the current release
- * (so the route can't be used to fetch arbitrary private assets). GitHub
- * answers the asset URL with a redirect to a signed storage URL; that one
- * must be fetched *without* the Authorization header.
+ * A short-lived, token-free URL for an installer, so the browser downloads
+ * straight from GitHub's storage and no bytes pass through this server.
+ * GitHub answers the API asset URL with a redirect to a signed storage URL
+ * (valid for a few minutes). `id` must belong to the current release so the
+ * route can't be used to reach arbitrary private assets.
  */
-export async function openAsset(id: number): Promise<AssetStream | null> {
+export async function assetDownloadUrl(id: number): Promise<string | null> {
   const release = await latestDesktopRelease();
-  const asset = release?.assets.find(a => a.id === id);
-  if (!asset) return null;
-  const first = await fetch(`${API}/repos/${REPO}/releases/assets/${id}`, {
+  if (!release?.assets.some(a => a.id === id)) return null;
+  const res = await fetch(`${API}/repos/${REPO}/releases/assets/${id}`, {
     headers: headers('application/octet-stream'),
     redirect: 'manual',
   });
-  let res = first;
-  if (first.status >= 300 && first.status < 400) {
-    const location = first.headers.get('location');
-    if (!location) throw new Error('GitHub asset redirect without location');
-    res = await fetch(location);
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('location');
+    if (location) return location;
   }
-  if (!res.ok || !res.body) throw new Error(`GitHub asset download: HTTP ${res.status}`);
-  const len = res.headers.get('content-length');
-  return {
-    name: asset.name,
-    size: len ? parseInt(len, 10) : null,
-    contentType: res.headers.get('content-type') || 'application/octet-stream',
-    body: Readable.fromWeb(res.body as import('stream/web').ReadableStream),
-  };
+  throw new Error(`GitHub asset ${id}: expected a redirect, got HTTP ${res.status}`);
 }
 
 export const PLATFORM_LABELS: Record<Platform, string> = {

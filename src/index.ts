@@ -87,7 +87,7 @@ import {
   downloadsConfigured,
   formatSize,
   latestDesktopRelease,
-  openAsset,
+  assetDownloadUrl,
   PLATFORM_LABELS,
   Platform,
 } from './lib/releases';
@@ -1479,7 +1479,7 @@ server.get(
 
 // ---------------------------------------------------------------------
 // Desktop app downloads: the latest desktop-v* GitHub release of riso-utils,
-// listed and streamed through this server because that repo is private.
+// listed through this server (the repo is private); downloads go straight to GitHub.
 // ---------------------------------------------------------------------
 
 server.get('/download', { preHandler: requirePermissions(['approved']) }, async (request, reply) => {
@@ -1517,16 +1517,14 @@ server.get(
     const id = parseInt((request.params as { assetId: string }).assetId, 10);
     if (!Number.isInteger(id) || id <= 0) return reply.code(404).send({ error: 'Not found' });
     try {
-      const asset = await openAsset(id);
-      if (!asset) return reply.code(404).send({ error: 'Not found' });
-      reply.type(asset.contentType);
-      reply.header('Content-Disposition', `attachment; filename="${asset.name}"`);
-      if (asset.size !== null) reply.header('Content-Length', asset.size);
-      reply.header('Cache-Control', 'private, max-age=3600');
-      return reply.send(asset.body);
+      const url = await assetDownloadUrl(id);
+      if (!url) return reply.code(404).send({ error: 'Not found' });
+      // The signed URL expires within minutes, so never cache the redirect.
+      reply.header('Cache-Control', 'no-store');
+      return reply.redirect(url, 302);
     } catch (err) {
       console.error('download asset failed:', err);
-      return reply.code(502).send({ error: 'Could not download the installer right now' });
+      return reply.code(502).send({ error: 'Could not reach GitHub for the installer right now' });
     }
   }
 );
