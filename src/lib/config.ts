@@ -160,8 +160,16 @@ export const getConfig = (): AppConfig => {
     if (process.env.REQUEST_PASSWORD) {
       config.general.request_password = process.env.REQUEST_PASSWORD;
     }
+    // Env vars overlay the [whatsapp] table rather than replacing it, so
+    // e.g. WHATSAPP_ENABLED=true keeps a group_id set in the file.
     const whatsappEnv = whatsappFromEnv();
-    if (whatsappEnv) config.whatsapp = whatsappEnv;
+    if (whatsappEnv) {
+      config.whatsapp = {
+        ...config.whatsapp,
+        ...(whatsappEnv.group_id ? { group_id: whatsappEnv.group_id } : {}),
+        ...(whatsappEnv.data_path ? { data_path: whatsappEnv.data_path } : {}),
+      };
+    }
 
     return config;
   } catch {

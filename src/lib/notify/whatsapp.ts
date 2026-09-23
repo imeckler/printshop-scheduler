@@ -25,6 +25,14 @@ import {
 
 const THUMBS_UP = '👍';
 
+// How long a send may take before we give up on it. The library drives a
+// browser page; when the page hangs, sendMessage never settles.
+const SEND_TIMEOUT_MS = 15_000;
+
+// Remember recently handled reactions so a re-delivery (reconnect, history
+// sync) doesn't re-run the claim and re-post its reply.
+const SEEN_REACTIONS_MAX = 1000;
+
 const isThumbsUp = (emoji: string): boolean => emoji.startsWith(THUMBS_UP); // incl. skin tones
 
 // "15551234567@c.us" -> "+15551234567"
@@ -32,6 +40,38 @@ const jidToE164 = (jid: string): string | null => {
   const m = /^(\d{7,16})@c\.us$/.exec(jid);
   return m ? `+${m[1]}` : null;
 };
+
+// Serialized message ids look like "<fromMe>_<chat id>_<hash>" with an
+// optional "_<participant>" suffix in groups. The suffix is not stable
+// between the id we get back from sendMessage and the id a later reaction
+// refers to (it may be absent, or in @lid rather than @c.us form), so only
+// the chat id and hash are used to match a reaction to an announcement.
+const parseMessageId = (serialized: string): { chatId: string; hash: string } | null => {
+  const m = /^(?:true|false)_([^_]+)_([^_]+)/.exec(serialized);
+  return m ? { chatId: m[1], hash: m[2] } : null;
+};
+
+// The stable part of a message id, used as the ref in claim events. It is a
+// substring of the full id stored on the request (see ClaimEvent).
+const messageKey = (serialized: string): string => {
+  const p = parseMessageId(serialized);
+  return p ? `${p.chatId}_${p.hash}` : serialized;
+};
+
+const withTimeout = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms);
+    p.then(
+      v => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      err => {
+        clearTimeout(t);
+        reject(err);
+      }
+    );
+  });
 
 export class WhatsAppNotifier implements RequestNotifier {
   readonly channel = 'whatsapp' as const;
@@ -41,6 +81,11 @@ export class WhatsAppNotifier implements RequestNotifier {
   private qr: string | undefined;
   private claimHandlers: ClaimHandler[] = [];
   private starting: Promise<void> | null = null;
+  private restartTimer: NodeJS.Timeout | null = null;
+  // Set while unlink() is logging out: the library emits 'disconnected' for
+  // that, and we restart ourselves, so the handler must not also restart.
+  private unlinking = false;
+  private seenReactions = new Set<string>();
 
   constructor(private readonly config: WhatsAppConfig) {
     const executablePath = process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -82,20 +127,21 @@ export class WhatsAppNotifier implements RequestNotifier {
       console.log('whatsapp: ready');
     });
     c.on('disconnected', reason => {
+      console.warn('whatsapp: disconnected', reason);
+      if (this.unlinking) return; // unlink() restarts on its own
       this.state = 'disconnected';
       this.detail = `Disconnected: ${reason}`;
-      console.warn('whatsapp: disconnected', reason);
       // The library tears the browser down on disconnect (without awaiting
       // it); give that a moment, make sure it's really closed, then start
-      // over so a new QR (or the stored session) gets picked up.
-      setTimeout(() => {
-        this.starting = null;
-        this.stop()
-          .then(() => this.start())
-          .catch(err => {
-            this.state = 'error';
-            this.detail = `Failed to reconnect: ${(err as Error).message}`;
-          });
+      // over so a new QR (or the stored session) gets picked up. One
+      // disconnect can be reported more than once; restart once.
+      if (this.restartTimer) return;
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null;
+        this.restart().catch(err => {
+          this.state = 'error';
+          this.detail = `Failed to reconnect: ${(err as Error).message}`;
+        });
       }, 5000);
     });
     c.on('message_reaction', reaction => {
@@ -110,6 +156,16 @@ export class WhatsAppNotifier implements RequestNotifier {
     const ref = reaction.msgId?._serialized;
     if (!ref) return;
     if (this.claimHandlers.length === 0) return;
+
+    const reactionId = reaction.id?._serialized;
+    if (reactionId) {
+      if (this.seenReactions.has(reactionId)) return;
+      if (this.seenReactions.size >= SEEN_REACTIONS_MAX) {
+        const oldest = this.seenReactions.values().next().value;
+        if (oldest !== undefined) this.seenReactions.delete(oldest);
+      }
+      this.seenReactions.add(reactionId);
+    }
 
     // In groups the sender may be reported as a "lid" (linked id) rather
     // than a phone jid; ask the library for the phone number either way.
@@ -126,7 +182,7 @@ export class WhatsAppNotifier implements RequestNotifier {
       return;
     }
     const event = {
-      posted: { channel: this.channel, ref },
+      posted: { channel: this.channel, ref: messageKey(ref) },
       claimant: { kind: 'whatsapp' as const, phoneE164 },
     };
     for (const h of this.claimHandlers) await h(event);
@@ -145,11 +201,21 @@ export class WhatsAppNotifier implements RequestNotifier {
   }
 
   async stop() {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
     try {
       await this.client.destroy();
     } catch {
       /* already down */
     }
+  }
+
+  private async restart() {
+    await this.stop();
+    this.starting = null;
+    await this.start();
   }
 
   onClaim(handler: ClaimHandler) {
@@ -162,7 +228,11 @@ export class WhatsAppNotifier implements RequestNotifier {
       return null;
     }
     try {
-      return await this.client.sendMessage(chatId, text, quoted ? { quotedMessageId: quoted } : {});
+      return await withTimeout(
+        this.client.sendMessage(chatId, text, quoted ? { quotedMessageId: quoted } : {}),
+        SEND_TIMEOUT_MS,
+        'sendMessage'
+      );
     } catch (err) {
       console.error('whatsapp: sendMessage failed', err);
       return null;
@@ -189,9 +259,7 @@ export class WhatsAppNotifier implements RequestNotifier {
   }
 
   private chatIdOf(posted: PostedNotification): string | null {
-    // Message ids look like "true_<chat id>_<hash>"; the chat is the middle part.
-    const m = /^(?:true|false)_([^_]+)_/.exec(posted.ref);
-    return m ? m[1] : this.config.group_id || null;
+    return parseMessageId(posted.ref)?.chatId ?? this.config.group_id ?? null;
   }
 
   private async reply(posted: PostedNotification, text: string) {
@@ -235,6 +303,7 @@ export class WhatsAppNotifier implements RequestNotifier {
   }
 
   async unlink() {
+    this.unlinking = true;
     try {
       await this.client.logout();
     } catch (err) {
@@ -243,7 +312,12 @@ export class WhatsAppNotifier implements RequestNotifier {
     this.state = 'starting';
     this.qr = undefined;
     this.detail = 'Unlinked; waiting for a new QR code…';
-    this.starting = null;
-    await this.start();
+    try {
+      await this.restart();
+    } finally {
+      // logout() closed the old browser, so any 'disconnected' it caused has
+      // already been emitted by the time the new session starts.
+      this.unlinking = false;
+    }
   }
 }

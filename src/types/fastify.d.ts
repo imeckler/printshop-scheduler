@@ -10,4 +10,10 @@ declare module 'fastify' {
     // @fastify/multipart onFile hook in index.ts).
     uploadFilenames?: Record<string, string>;
   }
+
+  interface FastifyReply {
+    // @fastify/view merges this into every template's data (the plugin is
+    // registered via require, so its own typings aren't picked up).
+    locals?: Record<string, unknown>;
+  }
 }

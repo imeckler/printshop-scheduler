@@ -95,6 +95,7 @@ import {
   normalizePhone,
   printTypeLabel,
   PRINT_TYPES,
+  PRINT_TYPE_LABELS,
   PrintType,
 } from './lib/printRequests';
 import { createRequestNotifier } from './lib/notify';
@@ -120,6 +121,18 @@ server.setErrorHandler((error, request, reply) => {
       details: error.validation,
     });
     return;
+  }
+
+  // @fastify/multipart rejects an oversized upload before the handler runs.
+  if (error.code === 'FST_REQ_FILE_TOO_LARGE') {
+    reply.status(413);
+    if (request.url.split('?')[0] === '/request') {
+      // Public form: say what went wrong rather than a JSON 500.
+      return renderRequestForm(reply, {
+        error: `That file is too big. The limit is ${MAX_REQUEST_FILE_MB} MB.`,
+      });
+    }
+    return reply.send({ error: 'File too large' });
   }
 
   console.error('Server error:', error);
@@ -295,6 +308,13 @@ async function requireLogin(request: FastifyRequest, reply: FastifyReply) {
     return reply.code(403).send({ error: 'Forbidden' });
   }
   request.user = user;
+  exposeViewer(reply, user);
+}
+
+// What the shared layout needs to know about the signed-in user, regardless
+// of what each route passes as `user` (see views/layouts/main.hbs).
+function exposeViewer(reply: FastifyReply, user: { printSquad: boolean }) {
+  reply.locals = { ...reply.locals, viewerPrintSquad: user.printSquad };
 }
 
 // shared auth function
@@ -317,6 +337,7 @@ function requirePermissions(
 
     const { authorizer, ...user } = userWithAuth;
     request.user = user;
+    exposeViewer(reply, user);
 
     const isAdmin =
       !!request.cookies?.admin_session && verifyAdminToken(request.cookies.admin_session);
@@ -329,6 +350,28 @@ function requirePermissions(
 
 // Initialize config and Stripe
 const config = getConfig();
+
+// Absolute URL for a site path, for links that leave the site (Stripe
+// redirects, group chat announcements). Production is served over TLS.
+const siteUrl = (path: string): string =>
+  `${process.env.NODE_ENV === 'production' ? 'https' : 'http'}://${config.general.domain}${path}`;
+
+// Today's date (yyyy-mm-dd) in the shop's timezone.
+const todayInShopTz = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: DEFAULT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
+// True for a real calendar date in yyyy-mm-dd form (Date.parse alone accepts
+// 2026-02-31 and rolls it into March).
+const isCalendarDate = (s: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const t = Date.parse(`${s}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
+};
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2025-07-30.basil',
 });
@@ -410,6 +453,7 @@ server.get('/', async (request, reply) => {
       reply.clearCookie('phone_verification');
       return reply.redirect('/login');
     }
+    exposeViewer(reply, user);
 
     // Approved but not currently authorized: explain why, offer nothing else.
     if (user.approved && !hasAccess(user, user.authorizer)) {
@@ -1544,7 +1588,7 @@ const requestNotifier = createRequestNotifier(config);
 handleNotifierClaims(requestNotifier);
 
 // Absolute URL base for links posted to the group chat.
-const publicBaseUrl = `${process.env.NODE_ENV === 'production' ? 'https' : 'http'}://${config.general.domain}`;
+const publicBaseUrl = siteUrl('');
 
 // The form password (REQUEST_PASSWORD) is exchanged for a cookie so the
 // link can be shared as /request?password=... and the form then posts
@@ -1585,13 +1629,7 @@ async function renderRequestForm(
   return reply.view('request', {
     title: 'Print job submission',
     inks,
-    printTypes: PRINT_TYPES.map(value => ({
-      value,
-      label: printTypeLabel({ printType: value, printTypeOther: null }).replace(
-        /^Other:.*/,
-        'Other'
-      ),
-    })),
+    printTypes: PRINT_TYPES.map(value => ({ value, label: PRINT_TYPE_LABELS[value] })),
     maxFileMb: MAX_REQUEST_FILE_MB,
     values: extra.values ?? {},
     ...extra,
@@ -1653,8 +1691,11 @@ server.post('/request', async (request, reply) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.email)) return fail('Please enter a valid email.');
   const phoneE164 = normalizePhone(values.phone);
   if (!phoneE164) return fail('Please enter a valid phone number (we text you when it is ready).');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(values.neededBy) || Number.isNaN(Date.parse(values.neededBy))) {
+  if (!isCalendarDate(values.neededBy)) {
     return fail('Please choose the date you need it by.');
+  }
+  if (values.neededBy < todayInShopTz()) {
+    return fail('The date you need it by has already passed.');
   }
   if (!(PRINT_TYPES as readonly string[]).includes(values.printType)) {
     return fail('Please choose a print type.');
@@ -2572,8 +2613,8 @@ server.post(
           },
         ],
         mode: 'payment',
-        success_url: `http://${config.general.domain}/credits?success=true`,
-        cancel_url: `http://${config.general.domain}/credits?cancelled=true`,
+        success_url: siteUrl('/credits?success=true'),
+        cancel_url: siteUrl('/credits?cancelled=true'),
         metadata: {
           userId: userId.toString(),
           creditAmountCents: creditAmountCents.toString(),

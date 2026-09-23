@@ -1,7 +1,7 @@
 // Print requests: the public /request form, the print squad's /requests
 // pages, and the claim/complete flow shared by the site and the notifier.
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import { db } from './db';
 import { printRequestFiles, printRequests, users } from './schema';
 import { User } from './dbtypes';
@@ -48,7 +48,9 @@ export interface NewPrintRequestInput {
 }
 
 // Saves the request and its file in one transaction, then announces it.
-// The announcement is best-effort: a chat outage must not lose a request.
+// The announcement is best-effort and not awaited: a chat outage must not
+// lose a request, and a hung chat client must not hang the submitter's
+// page (they'd resubmit and we'd have the request twice).
 export async function createPrintRequest(
   input: NewPrintRequestInput,
   notifier: RequestNotifier,
@@ -67,6 +69,17 @@ export async function createPrintRequest(
     return row;
   });
 
+  announcePrintRequest(request, notifier, baseUrl).catch(err =>
+    console.error(`print request #${request.requestId}: announcement failed`, err)
+  );
+  return request;
+}
+
+export async function announcePrintRequest(
+  request: PrintRequest,
+  notifier: RequestNotifier,
+  baseUrl: string
+): Promise<void> {
   const posted = await notifier.postNewRequest({
     requestId: request.requestId,
     name: request.name,
@@ -75,15 +88,11 @@ export async function createPrintRequest(
     desiredSize: request.desiredSize,
     url: `${baseUrl}/requests/${request.requestId}`,
   });
-  if (posted) {
-    await db
-      .update(printRequests)
-      .set({ notificationChannel: posted.channel, notificationRef: posted.ref })
-      .where(eq(printRequests.requestId, request.requestId));
-    request.notificationChannel = posted.channel;
-    request.notificationRef = posted.ref;
-  }
-  return request;
+  if (!posted) return;
+  await db
+    .update(printRequests)
+    .set({ notificationChannel: posted.channel, notificationRef: posted.ref })
+    .where(eq(printRequests.requestId, request.requestId));
 }
 
 export async function listPrintRequests() {
@@ -209,25 +218,33 @@ export async function resolveClaimant(identity: ClaimantIdentity): Promise<User 
   }
 }
 
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, c => `\\${c}`);
+
 // Wires the notifier's claim events (a 👍 on the announcement) into the DB.
 export function handleNotifierClaims(notifier: RequestNotifier) {
-  notifier.onClaim(async ({ posted, claimant }: ClaimEvent) => {
+  notifier.onClaim(async ({ posted: reactedTo, claimant }: ClaimEvent) => {
+    // See ClaimEvent: the event's ref is a substring of the stored one.
     const request = await db.query.printRequests.findFirst({
       where: and(
-        eq(printRequests.notificationChannel, posted.channel),
-        eq(printRequests.notificationRef, posted.ref)
+        eq(printRequests.notificationChannel, reactedTo.channel),
+        like(printRequests.notificationRef, `%${escapeLike(reactedTo.ref)}%`)
       ),
     });
     if (!request) return; // a reaction to some other message
+    const posted = postedOf(request)!; // full ref, so replies can quote it
 
     const user = await resolveClaimant(claimant);
     if (!user || !user.printSquad) {
       await notifier.postClaimFailed(
         posted,
-        "Couldn't match your number to a print squad account, so this isn't claimed. Claim it on the website instead."
+        "Couldn't match your number to a print squad account, so this isn't claimed. Claim it on the website instead, or another print squad member can claim it with 👍."
       );
       return;
     }
+
+    // Already theirs (they re-reacted, or the reaction was re-delivered):
+    // nothing to do and nothing to say.
+    if (request.status === 'claimed' && request.claimedByUserId === user.userId) return;
 
     const result = await claimPrintRequest(request.requestId, user);
     if (result.ok) {

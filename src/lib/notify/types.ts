@@ -31,6 +31,10 @@ export interface NewRequestSummary {
 }
 
 export interface ClaimEvent {
+  // Which announcement was reacted to. `posted.ref` is matched to the stored
+  // PostedNotification.ref as a substring: WhatsApp message ids carry a
+  // participant suffix that differs between the id sendMessage returns and
+  // the id a reaction refers to, so that notifier emits only the stable part.
   posted: PostedNotification;
   claimant: ClaimantIdentity;
 }
