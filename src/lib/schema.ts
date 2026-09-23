@@ -12,6 +12,7 @@ import {
   check,
   customType,
   primaryKey,
+  date,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -19,6 +20,13 @@ import { relations, sql } from 'drizzle-orm';
 const tstzrange = customType<{ data: string; notNull: false; default: false }>({
   dataType() {
     return 'tstzrange';
+  },
+});
+
+// Raw bytes. node-postgres maps bytea <-> Buffer in both directions.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
   },
 });
 
@@ -63,6 +71,8 @@ export const users = pgTable(
     applicationReviewer: boolean('application_reviewer').notNull().default(false),
     printshop: boolean('printshop').notNull().default(false),
     eventCreator: boolean('event_creator').notNull().default(false),
+    // May see and claim public print requests (/requests). Set by the admin.
+    printSquad: boolean('print_squad').notNull().default(false),
     // NULL = nobody vouches for this user yet (no access). See `authorizers`.
     authorizerId: integer('authorizer_id').references(() => authorizers.authorizerId, {
       onDelete: 'set null',
@@ -401,5 +411,66 @@ export const risoLastSeenTotalsRelations = relations(risoLastSeenTotals, ({ one 
   user: one(users, {
     fields: [risoLastSeenTotals.userId],
     references: [users.userId],
+  }),
+}));
+
+// ---------------------------------------------------------------------
+// Public print requests: the password-gated /request form. Print squad
+// members see them on /requests, claim one (on the site, or by reacting to
+// the notifier's group message), and complete it with pickup details, which
+// are texted to the requester.
+// ---------------------------------------------------------------------
+export const printRequests = pgTable('print_requests', {
+  requestId: bigserial('request_id', { mode: 'number' }).primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phoneE164: text('phone_e164').notNull(),
+  neededBy: date('needed_by').notNull(), // ISO yyyy-mm-dd, no timezone
+  printType: text('print_type').notNull(), // 'poster' | 'flyer' | 'zine' | 'other'
+  printTypeOther: text('print_type_other'),
+  desiredSize: text('desired_size'),
+  strictSize: boolean('strict_size').notNull().default(false),
+  notes: text('notes'),
+  status: text('status').notNull().default('open'), // 'open' | 'claimed' | 'completed'
+  claimedByUserId: bigint('claimed_by_user_id', { mode: 'number' }).references(() => users.userId, {
+    onDelete: 'set null',
+  }),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  pickupDetails: text('pickup_details'),
+  // Where the "new request" message was posted, so a reaction to it can be
+  // matched back: channel is the notifier kind ('whatsapp' | 'discord'),
+  // ref is that channel's opaque message id.
+  notificationChannel: text('notification_channel'),
+  notificationRef: text('notification_ref'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// The uploaded artwork, stored in Postgres (the app has no persistent disk).
+// Kept in its own table so listing requests never reads the blobs.
+export const printRequestFiles = pgTable('print_request_files', {
+  fileId: bigserial('file_id', { mode: 'number' }).primaryKey(),
+  requestId: bigint('request_id', { mode: 'number' })
+    .notNull()
+    .references(() => printRequests.requestId, { onDelete: 'cascade' }),
+  filename: text('filename').notNull(),
+  contentType: text('content_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  data: bytea('data').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const printRequestsRelations = relations(printRequests, ({ one, many }) => ({
+  claimedBy: one(users, {
+    fields: [printRequests.claimedByUserId],
+    references: [users.userId],
+  }),
+  files: many(printRequestFiles),
+}));
+
+export const printRequestFilesRelations = relations(printRequestFiles, ({ one }) => ({
+  request: one(printRequests, {
+    fields: [printRequestFiles.requestId],
+    references: [printRequests.requestId],
   }),
 }));

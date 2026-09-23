@@ -37,6 +37,9 @@
             {{/if}}
             <a href="/credits" class="btn">My Credits</a>
             <a href="/layout" class="btn">Layout tool</a>
+            {{#if user.printSquad}}
+                <a href="/requests" class="btn">Print requests</a>
+            {{/if}}
         </div>
 
         {{#if occurrences}}

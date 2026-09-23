@@ -1,0 +1,65 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Print request notifier</h2>
+        <div>
+            <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
+    {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
+
+    <div class="admin-section">
+        <p>
+            <strong>Channel:</strong> {{status.channel}}
+            &nbsp;·&nbsp;
+            <strong>State:</strong>
+            <span class="status-badge {{#if ready}}approved{{else}}pending{{/if}}">{{status.state}}</span>
+        </p>
+        {{#if status.detail}}<p>{{status.detail}}</p>{{/if}}
+
+        {{#if needsLink}}
+            <p>Open WhatsApp on the phone that owns the announcing account → <em>Linked devices</em> → <em>Link a device</em>, and scan:</p>
+            <img src="{{qrDataUrl}}" alt="WhatsApp link QR code" width="320" height="320" style="display:block; margin: 1rem 0; border: 1px solid #ddd;">
+            <p class="form-text">The code rotates every ~30 s; reload this page if it stops working.</p>
+        {{/if}}
+
+        {{#if ready}}
+            <h4>Announcement group</h4>
+            {{#if hasTarget}}
+                <p>Posting to <strong>{{#if status.targetChatName}}{{status.targetChatName}}{{else}}<span class="text-danger">a group this account isn't in</span>{{/if}}</strong> <code>{{status.targetChatId}}</code></p>
+            {{else}}
+                <p class="text-danger">No group configured, so requests are saved but not announced. Set <code>WHATSAPP_GROUP_ID</code> to one of the ids below and restart.</p>
+            {{/if}}
+
+            <h4>Groups this account is in</h4>
+            {{#if status.chats.length}}
+                <div class="recent-table">
+                    <table>
+                        <thead><tr><th>Name</th><th>Id</th></tr></thead>
+                        <tbody>
+                            {{#each status.chats}}
+                                <tr><td>{{name}}</td><td><code>{{id}}</code></td></tr>
+                            {{/each}}
+                        </tbody>
+                    </table>
+                </div>
+            {{else}}
+                <p class="no-data">No groups found.</p>
+            {{/if}}
+
+            <form method="POST" action="/admin/notifier/unlink" onsubmit="return confirm('Unlink this WhatsApp account? You will need to scan a new QR code.')" style="margin-top:1.5rem;">
+                <button type="submit" class="btn btn-danger btn-sm">Unlink account</button>
+            </form>
+        {{/if}}
+    </div>
+
+    <div class="admin-section">
+        <h4>How it works</h4>
+        <ul>
+            <li>Every new submission on <code>/request</code> is posted to the group with a link to its <code>/requests/…</code> page.</li>
+            <li>A print squad member reacts 👍 to that message to claim it. They're matched to their account by phone number, so the number they use for WhatsApp must be the one they log in here with.</li>
+            <li>Completing a request on the site texts the requester the pickup details and posts a follow-up in the group.</li>
+        </ul>
+    </div>
+</div>

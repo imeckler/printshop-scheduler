@@ -84,6 +84,22 @@ import {
   InkInfo,
 } from './lib/layout';
 import {
+  createPrintRequest,
+  listPrintRequests,
+  getPrintRequest,
+  getPrintRequestFile,
+  claimPrintRequest,
+  unclaimPrintRequest,
+  completePrintRequest,
+  handleNotifierClaims,
+  normalizePhone,
+  printTypeLabel,
+  PRINT_TYPES,
+  PrintType,
+} from './lib/printRequests';
+import { createRequestNotifier } from './lib/notify';
+import QRCode from 'qrcode';
+import {
   downloadsConfigured,
   formatSize,
   latestDesktopRelease,
@@ -119,10 +135,19 @@ server.register(websocket);
 // Register form parser for HTML forms
 server.register(require('@fastify/formbody'));
 
-// Multipart uploads (the /layout image). Fields and the file land on request.body.
+// Multipart uploads (the /layout image, /request artwork). Fields and the
+// file land on request.body; keyValues mode drops the original filename, so
+// onFile stashes it on request.uploadFilenames[field].
 server.register(require('@fastify/multipart'), {
   attachFieldsToBody: 'keyValues',
   limits: { fileSize: 40 * 1024 * 1024, files: 1, fields: 20, fieldSize: 10 * 1024 },
+  async onFile(
+    this: FastifyRequest,
+    part: { fieldname: string; filename: string; toBuffer(): Promise<Buffer> }
+  ) {
+    await part.toBuffer();
+    (this.uploadFilenames ??= {})[part.fieldname] = part.filename;
+  },
 });
 
 // Add content type parser for Stripe webhooks (need raw body for signature verification)
@@ -319,6 +344,8 @@ if (config.general.site_password) {
     const url = request.url.split('?')[0];
     if (
       url === '/gate' ||
+      url === '/request' ||
+      url.startsWith('/request/') ||
       url.startsWith('/public/') ||
       url === '/ping' ||
       url === '/stripe-webhook' ||
@@ -401,7 +428,13 @@ server.get('/', async (request, reply) => {
       const { activated, error } = request.query as { activated?: string; error?: string };
 
       return reply.view('home', {
-        user: { id: userId, name: user.name, code: user.code, printshop: user.printshop },
+        user: {
+          id: userId,
+          name: user.name,
+          code: user.code,
+          printshop: user.printshop,
+          printSquad: user.printSquad,
+        },
         occurrences: occurrences.map(o => ({
           ...o,
           cancellable: o.createdBy === userId,
@@ -594,16 +627,25 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
 
   try {
     const { userId } = request.params as { userId: string };
-    const { approved, trained, printshop, eventCreator, risoUsername, authorizerId, authorized } =
-      request.body as {
-        approved?: string;
-        trained?: string;
-        printshop?: string;
-        eventCreator?: string;
-        risoUsername?: string;
-        authorizerId?: string;
-        authorized?: string;
-      };
+    const {
+      approved,
+      trained,
+      printshop,
+      eventCreator,
+      printSquad,
+      risoUsername,
+      authorizerId,
+      authorized,
+    } = request.body as {
+      approved?: string;
+      trained?: string;
+      printshop?: string;
+      eventCreator?: string;
+      printSquad?: string;
+      risoUsername?: string;
+      authorizerId?: string;
+      authorized?: string;
+    };
 
     const id = parseInt(userId);
     const before = await db.query.users.findFirst({
@@ -622,6 +664,7 @@ server.post('/admin/users/:userId/update', async (request, reply) => {
         trained: trained === 'on',
         printshop: printshop === 'on',
         eventCreator: eventCreator === 'on',
+        printSquad: printSquad === 'on',
         risoUsername: risoUsername?.trim() || null,
         authorizerId: Number.isNaN(newAuthorizerId) ? null : newAuthorizerId,
         authorized: newAuthorized,
@@ -1493,37 +1536,373 @@ server.get(
 );
 
 // ---------------------------------------------------------------------
+// Print requests: public submission form (/request, password gated),
+// print squad pages (/requests), and the group-chat notifier.
+// ---------------------------------------------------------------------
+
+const requestNotifier = createRequestNotifier(config);
+handleNotifierClaims(requestNotifier);
+
+// Absolute URL base for links posted to the group chat.
+const publicBaseUrl = `${process.env.NODE_ENV === 'production' ? 'https' : 'http'}://${config.general.domain}`;
+
+// The form password (REQUEST_PASSWORD) is exchanged for a cookie so the
+// link can be shared as /request?password=... and the form then posts
+// without it. Same HMAC scheme as the site gate.
+const requestAccessToken = config.general.request_password
+  ? crypto
+      .createHmac('sha256', config.jwt.secret)
+      .update(`request:${config.general.request_password}`)
+      .digest('hex')
+  : null;
+
+function hasRequestAccess(request: FastifyRequest): boolean {
+  return !!requestAccessToken && request.cookies?.request_access === requestAccessToken;
+}
+
+function grantRequestAccess(reply: FastifyReply) {
+  reply.setCookie('request_access', requestAccessToken!, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 30 * 24 * 60 * 60,
+    path: '/',
+  });
+}
+
+const MAX_REQUEST_FILE_MB = 40;
+
+async function renderRequestForm(
+  reply: FastifyReply,
+  extra: { error?: string; submitted?: boolean; values?: Record<string, unknown> }
+) {
+  let inks: AvailableInk[] = [];
+  try {
+    inks = await getAvailableInks();
+  } catch (err) {
+    console.warn('request form: could not list inks', err);
+  }
+  return reply.view('request', {
+    title: 'Print job submission',
+    inks,
+    printTypes: PRINT_TYPES.map(value => ({
+      value,
+      label: printTypeLabel({ printType: value, printTypeOther: null }).replace(
+        /^Other:.*/,
+        'Other'
+      ),
+    })),
+    maxFileMb: MAX_REQUEST_FILE_MB,
+    values: extra.values ?? {},
+    ...extra,
+  });
+}
+
+server.get('/request', async (request, reply) => {
+  if (!requestAccessToken) {
+    return reply.code(404).type('text/plain').send('Print requests are not enabled.');
+  }
+  const { password, submitted, error } = request.query as {
+    password?: string;
+    submitted?: string;
+    error?: string;
+  };
+  if (password !== undefined) {
+    if (password === config.general.request_password) {
+      grantRequestAccess(reply);
+      return reply.redirect('/request');
+    }
+    return reply.redirect('/request?error=1');
+  }
+  if (!hasRequestAccess(request)) {
+    return reply.view('request-gate', { title: 'Print job submission', error: !!error });
+  }
+  return renderRequestForm(reply, { submitted: submitted === '1' });
+});
+
+server.post('/request/gate', async (request, reply) => {
+  if (!requestAccessToken) return reply.code(404).send();
+  const { password } = (request.body || {}) as { password?: string };
+  if (password === config.general.request_password) {
+    grantRequestAccess(reply);
+    return reply.redirect('/request');
+  }
+  return reply.redirect('/request?error=1');
+});
+
+server.post('/request', async (request, reply) => {
+  if (!requestAccessToken || !hasRequestAccess(request)) {
+    return reply.redirect('/request');
+  }
+  const body = (request.body || {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() : '');
+  const values = {
+    name: str('name'),
+    email: str('email'),
+    phone: str('phone'),
+    neededBy: str('neededBy'),
+    printType: str('printType'),
+    printTypeOther: str('printTypeOther'),
+    desiredSize: str('desiredSize'),
+    strictSize: str('strictSize') === 'on',
+    notes: str('notes'),
+  };
+  const fail = (error: string) => renderRequestForm(reply, { error, values });
+
+  if (!values.name) return fail('Please enter your name.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.email)) return fail('Please enter a valid email.');
+  const phoneE164 = normalizePhone(values.phone);
+  if (!phoneE164) return fail('Please enter a valid phone number (we text you when it is ready).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(values.neededBy) || Number.isNaN(Date.parse(values.neededBy))) {
+    return fail('Please choose the date you need it by.');
+  }
+  if (!(PRINT_TYPES as readonly string[]).includes(values.printType)) {
+    return fail('Please choose a print type.');
+  }
+  if (values.printType === 'other' && !values.printTypeOther) {
+    return fail('Please describe what you would like printed.');
+  }
+  const file = body.file;
+  if (!Buffer.isBuffer(file) || file.length === 0) {
+    return fail('Please attach your file (PDF, PNG or JPEG).');
+  }
+  const kind = sniffImageType(file);
+  if (!kind) return fail('The file must be a PDF, PNG or JPEG.');
+  const contentType = { png: 'image/png', jpg: 'image/jpeg', pdf: 'application/pdf' }[kind];
+  const uploadedName = (request.uploadFilenames?.file || '')
+    .replace(/[^\w.() -]+/g, '_')
+    .slice(0, 120);
+  const filename = uploadedName || `print-request.${kind}`;
+
+  try {
+    await createPrintRequest(
+      {
+        name: values.name.slice(0, 200),
+        email: values.email.slice(0, 254),
+        phoneE164,
+        neededBy: values.neededBy,
+        printType: values.printType as PrintType,
+        printTypeOther: values.printType === 'other' ? values.printTypeOther.slice(0, 500) : null,
+        desiredSize: values.desiredSize.slice(0, 100) || null,
+        strictSize: values.strictSize,
+        notes: values.notes.slice(0, 2000) || null,
+        file: { filename, contentType, data: file },
+      },
+      requestNotifier,
+      publicBaseUrl
+    );
+  } catch (err) {
+    console.error('Failed to save print request:', err);
+    return fail('Something went wrong saving your request. Please try again.');
+  }
+  return reply.redirect('/request?submitted=1');
+});
+
+// --- Print squad side ---
+
+const requirePrintSquad = requirePermissions(['printSquad']);
+
+const squadViewUser = (u: User) => ({
+  id: u.userId,
+  name: u.name,
+  printshop: u.printshop,
+  printSquad: true,
+});
+
+const requestForView = (
+  r: {
+    printType: string;
+    printTypeOther: string | null;
+    status: string;
+    claimedByUserId: number | null;
+  },
+  viewerId: number
+) => ({
+  ...r,
+  printTypeLabel: printTypeLabel(r),
+  isOpen: r.status === 'open',
+  isClaimed: r.status === 'claimed',
+  isCompleted: r.status === 'completed',
+  claimedByMe: r.claimedByUserId === viewerId,
+});
+
+server.get('/requests', { preHandler: requirePrintSquad }, async (request, reply) => {
+  const me = request.user!;
+  const all = (await listPrintRequests()).map(r => requestForView(r, me.userId));
+  const { success, error } = request.query as { success?: string; error?: string };
+  return reply.view('requests', {
+    title: 'Print requests',
+    user: squadViewUser(me),
+    open: all.filter(r => r.isOpen),
+    claimed: all.filter(r => r.isClaimed),
+    completed: all.filter(r => r.isCompleted),
+    success,
+    error,
+  });
+});
+
+const requestIdParam = (request: FastifyRequest): number | null => {
+  const id = parseInt((request.params as { id: string }).id, 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+server.get('/requests/:id', { preHandler: requirePrintSquad }, async (request, reply) => {
+  const id = requestIdParam(request);
+  const r = id ? await getPrintRequest(id) : undefined;
+  if (!r)
+    return reply
+      .code(404)
+      .view('request-detail', {
+        title: 'Not found',
+        notFound: true,
+        user: squadViewUser(request.user!),
+      });
+  const { success, error } = request.query as { success?: string; error?: string };
+  return reply.view('request-detail', {
+    title: `Print request #${r.requestId}`,
+    user: squadViewUser(request.user!),
+    r: requestForView(r, request.user!.userId),
+    files: r.files.map(f => ({ ...f, size: formatSize(f.sizeBytes) })),
+    success,
+    error,
+  });
+});
+
+server.get(
+  '/requests/:id/files/:fileId',
+  { preHandler: requirePrintSquad },
+  async (request, reply) => {
+    const id = requestIdParam(request);
+    const fileId = parseInt((request.params as { fileId: string }).fileId, 10);
+    const f = id && Number.isInteger(fileId) ? await getPrintRequestFile(id, fileId) : undefined;
+    if (!f) return reply.code(404).send({ error: 'Not found' });
+    const download = (request.query as { download?: string }).download === '1';
+    reply.type(f.contentType);
+    reply.header(
+      'Content-Disposition',
+      `${download ? 'attachment' : 'inline'}; filename="${f.filename.replace(/"/g, '')}"`
+    );
+    reply.header('Cache-Control', 'private, max-age=3600');
+    return reply.send(f.data);
+  }
+);
+
+server.post('/requests/:id/claim', { preHandler: requirePrintSquad }, async (request, reply) => {
+  const id = requestIdParam(request);
+  if (!id) return reply.code(404).send({ error: 'Not found' });
+  const result = await claimPrintRequest(id, request.user!);
+  if (!result.ok) {
+    const msg =
+      result.reason === 'already_claimed'
+        ? 'Someone else already claimed this request'
+        : result.reason === 'completed'
+          ? 'This request is already completed'
+          : 'Request not found';
+    return reply.redirect(`/requests/${id}?error=${encodeURIComponent(msg)}`);
+  }
+  return reply.redirect(`/requests/${id}?success=${encodeURIComponent('Claimed. It is yours!')}`);
+});
+
+server.post('/requests/:id/unclaim', { preHandler: requirePrintSquad }, async (request, reply) => {
+  const id = requestIdParam(request);
+  if (!id) return reply.code(404).send({ error: 'Not found' });
+  const ok = await unclaimPrintRequest(id, request.user!);
+  return reply.redirect(
+    ok
+      ? `/requests/${id}?success=${encodeURIComponent('Released back to the queue')}`
+      : `/requests/${id}?error=${encodeURIComponent('Only the person who claimed it can release it')}`
+  );
+});
+
+server.post('/requests/:id/complete', { preHandler: requirePrintSquad }, async (request, reply) => {
+  const id = requestIdParam(request);
+  if (!id) return reply.code(404).send({ error: 'Not found' });
+  const pickupDetails = ((request.body as { pickupDetails?: string })?.pickupDetails || '').trim();
+  if (!pickupDetails) {
+    return reply.redirect(
+      `/requests/${id}?error=${encodeURIComponent('Enter the pickup details first')}`
+    );
+  }
+  const result = await completePrintRequest(
+    id,
+    request.user!,
+    pickupDetails.slice(0, 1000),
+    requestNotifier
+  );
+  if (!result.ok)
+    return reply.redirect(`/requests/${id}?error=${encodeURIComponent(result.reason)}`);
+  const msg = result.smsSent
+    ? 'Marked complete and the requester has been texted'
+    : 'Marked complete, but the text message could not be sent (is Twilio configured?)';
+  return reply.redirect(`/requests/${id}?success=${encodeURIComponent(msg)}`);
+});
+
+// --- Admin: group-chat notifier status / linking ---
+
+server.get('/admin/notifier', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+  const status = await requestNotifier.status();
+  const qrDataUrl = status.qr ? await QRCode.toDataURL(status.qr, { width: 320 }) : null;
+  const { success, error } = request.query as { success?: string; error?: string };
+  return reply.view('admin-notifier', {
+    title: 'Group chat notifier',
+    status,
+    qrDataUrl,
+    needsLink: status.state === 'needs_link',
+    ready: status.state === 'ready',
+    hasTarget: !!status.targetChatId,
+    success,
+    error,
+  });
+});
+
+server.post('/admin/notifier/unlink', async (request, reply) => {
+  if (!requireAdmin(request, reply)) return;
+  await requestNotifier.unlink();
+  return reply.redirect('/admin/notifier?success=Unlinked.+Scan+the+new+QR+code+to+relink.');
+});
+
+// ---------------------------------------------------------------------
 // Desktop app downloads: the latest desktop-v* GitHub release of riso-utils,
 // listed through this server (the repo is private); downloads go straight to GitHub.
 // ---------------------------------------------------------------------
 
-server.get('/download', { preHandler: requirePermissions(['approved']) }, async (request, reply) => {
-  const base = { title: 'Download', user: { id: request.user!.userId, name: request.user!.name } };
-  try {
-    const release = await latestDesktopRelease();
-    const platforms = (['mac', 'windows', 'linux'] as Platform[]).map(p => ({
-      label: PLATFORM_LABELS[p],
-      assets: (release?.assets ?? [])
-        .filter(a => a.platform === p)
-        .map(a => ({ ...a, sizeLabel: formatSize(a.size) })),
-    }));
-    return reply.view('download', {
-      ...base,
-      configured: downloadsConfigured(),
-      release: release && {
-        ...release,
-        publishedDate: release.publishedAt ? new Date(release.publishedAt).toLocaleDateString('en-US', { dateStyle: 'long' }) : '',
-      },
-      platforms,
-    });
-  } catch (err) {
-    console.error('download page:', err);
-    return reply.view('download', {
-      ...base,
-      error: `Could not fetch the latest release: ${(err as Error).message}`,
-    });
+server.get(
+  '/download',
+  { preHandler: requirePermissions(['approved']) },
+  async (request, reply) => {
+    const base = {
+      title: 'Download',
+      user: { id: request.user!.userId, name: request.user!.name },
+    };
+    try {
+      const release = await latestDesktopRelease();
+      const platforms = (['mac', 'windows', 'linux'] as Platform[]).map(p => ({
+        label: PLATFORM_LABELS[p],
+        assets: (release?.assets ?? [])
+          .filter(a => a.platform === p)
+          .map(a => ({ ...a, sizeLabel: formatSize(a.size) })),
+      }));
+      return reply.view('download', {
+        ...base,
+        configured: downloadsConfigured(),
+        release: release && {
+          ...release,
+          publishedDate: release.publishedAt
+            ? new Date(release.publishedAt).toLocaleDateString('en-US', { dateStyle: 'long' })
+            : '',
+        },
+        platforms,
+      });
+    } catch (err) {
+      console.error('download page:', err);
+      return reply.view('download', {
+        ...base,
+        error: `Could not fetch the latest release: ${(err as Error).message}`,
+      });
+    }
   }
-});
+);
 
 server.get(
   '/download/:assetId',
@@ -2539,6 +2918,9 @@ async function start() {
     const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
     await server.listen({ host: '0.0.0.0', port });
     console.log(`Server listening at http://localhost:${port}`);
+
+    // Bring up the group-chat notifier (WhatsApp Web session) in the background
+    await requestNotifier.start();
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);

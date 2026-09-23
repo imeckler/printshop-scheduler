@@ -27,6 +27,16 @@ export interface DiscordConfig {
   poll_interval_minutes: number;
 }
 
+// Group chat that new print requests are announced in (see lib/notify).
+// group_id is a WhatsApp chat id like "1234567890-1234567890@g.us"; the
+// admin page /admin/notifier lists the ids of groups the linked account is
+// in. Leave it blank until you have it: the client still links and lists.
+export interface WhatsAppConfig {
+  group_id?: string;
+  // Where whatsapp-web.js keeps the linked session (default ./.wwebjs_auth).
+  data_path?: string;
+}
+
 export interface AppConfig {
   general: {
     domain: string;
@@ -35,6 +45,8 @@ export interface AppConfig {
     site_name: string;
     daemon_secret?: string;
     site_password?: string;
+    // Password for the public print request form (/request). Unset = form disabled.
+    request_password?: string;
   };
   database: {
     postgresql_url: string;
@@ -45,7 +57,16 @@ export interface AppConfig {
   twilio?: TwilioConfig;
   riso?: RisoConfig;
   discord?: DiscordConfig;
+  whatsapp?: WhatsAppConfig;
 }
+
+const whatsappFromEnv = (): WhatsAppConfig | undefined => {
+  if (process.env.WHATSAPP_ENABLED !== 'true' && !process.env.WHATSAPP_GROUP_ID) return undefined;
+  return {
+    group_id: process.env.WHATSAPP_GROUP_ID || undefined,
+    data_path: process.env.WHATSAPP_DATA_PATH || undefined,
+  };
+};
 
 const discordFromEnv = (required: (name: string) => string): DiscordConfig => ({
   client_id: required('DISCORD_CLIENT_ID'),
@@ -73,6 +94,7 @@ const configFromEnv = (): AppConfig => {
       site_name: process.env.SITE_NAME || 'Printshop Booking System',
       daemon_secret: process.env.DAEMON_SECRET,
       site_password: process.env.SITE_PASSWORD,
+      request_password: process.env.REQUEST_PASSWORD,
     },
     database: {
       postgresql_url: required('DATABASE_URL'),
@@ -105,6 +127,8 @@ const configFromEnv = (): AppConfig => {
     config.discord = discordFromEnv(required);
   }
 
+  config.whatsapp = whatsappFromEnv();
+
   return config;
 };
 
@@ -133,6 +157,11 @@ export const getConfig = (): AppConfig => {
     if (config.discord && !config.discord.poll_interval_minutes) {
       config.discord.poll_interval_minutes = 5;
     }
+    if (process.env.REQUEST_PASSWORD) {
+      config.general.request_password = process.env.REQUEST_PASSWORD;
+    }
+    const whatsappEnv = whatsappFromEnv();
+    if (whatsappEnv) config.whatsapp = whatsappEnv;
 
     return config;
   } catch {

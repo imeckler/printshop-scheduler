@@ -29,8 +29,11 @@ FROM node:18-alpine
 # Install necessary packages for building native modules and Puppeteer dependencies
 RUN apk add --no-cache python3 make g++ chromium
 
-# Set up Puppeteer to use system Chromium
+# Set up Puppeteer (used by whatsapp-web.js) to use system Chromium.
+# PUPPETEER_SKIP_DOWNLOAD is the current name of the flag; the old one is
+# kept for older puppeteer versions in the tree.
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 
 WORKDIR /app
@@ -63,6 +66,11 @@ EXPOSE 3000
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S appuser -u 1001
+# whatsapp-web.js writes its linked session and web cache here. Mount a
+# volume at /app/.wwebjs_auth to keep the link across redeploys; without
+# one the admin has to rescan the QR at /admin/notifier after each deploy.
+RUN mkdir -p /app/.wwebjs_auth /app/.wwebjs_cache \
+    && chown -R appuser /app/.wwebjs_auth /app/.wwebjs_cache
 USER appuser
 
 # Start the application

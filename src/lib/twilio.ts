@@ -142,6 +142,30 @@ class TwilioService {
   }
 
   /**
+   * Sends a plain SMS. Returns false (and logs) when Twilio is not configured
+   * or the send fails; callers decide whether that matters.
+   */
+  async sendSms(to: string, body: string): Promise<boolean> {
+    if (!this.isEnabled || !this.client) {
+      console.log(`Twilio is not configured. Would have texted ${to}: ${body}`);
+      return false;
+    }
+    try {
+      await this.client.messages.create({
+        body,
+        to,
+        ...(this.messagingServiceSid
+          ? { messagingServiceSid: this.messagingServiceSid }
+          : { from: this.fromPhoneNumber }),
+      });
+      return true;
+    } catch (error) {
+      console.error(`Error sending SMS to ${to}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * Checks if the provided code matches the verification code
    * Uses Twilio Verify API for first-time verification,
    * or checks against our stored code for previously verified numbers

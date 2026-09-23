@@ -31,6 +31,7 @@
                         <th>Trained</th>
                         <th>Printshop</th>
                         <th>Event Creator</th>
+                        <th>Print Squad</th>
                         <th>Authorizer</th>
                         <th>Access</th>
                         <th>Joined</th>
@@ -72,6 +73,11 @@
                             </span>
                         </td>
                         <td>
+                            <span class="status-badge {{#if printSquad}}approved{{else}}pending{{/if}}">
+                                {{#if printSquad}}✅ Yes{{else}}❌ No{{/if}}
+                            </span>
+                        </td>
+                        <td>
                             {{#if authorizerName}}
                                 {{authorizerName}}{{#unless authorizerValid}} <span class="status-badge pending" title="Authorizer is not currently valid">invalid</span>{{/unless}}
                             {{else}}
@@ -85,7 +91,7 @@
                         </td>
                         <td>{{formatDate createdAt}}</td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}}, {{printshop}}, {{eventCreator}}, {{#if authorizerId}}{{authorizerId}}{{else}}null{{/if}}, {{authorized}})">
+                            <button class="btn btn-sm btn-primary" onclick="openEditModal({{userId}}, '{{name}}', '{{risoUsername}}', {{approved}}, {{trained}}, {{printshop}}, {{eventCreator}}, {{printSquad}}, {{#if authorizerId}}{{authorizerId}}{{else}}null{{/if}}, {{authorized}})">
                                 Edit
                             </button>
                         </td>
@@ -163,6 +169,13 @@
                     <label>
                         <input type="checkbox" id="modalEventCreator" name="eventCreator">
                         Event creator (can create events via the API)
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="modalPrintSquad" name="printSquad">
+                        Print squad (sees and claims public print requests at /requests)
                     </label>
                 </div>
             </div>
@@ -375,7 +388,7 @@
 </style>
 
 <script>
-function openEditModal(userId, userName, risoUsername, approved, trained, printshop, eventCreator, authorizerId, authorized) {
+function openEditModal(userId, userName, risoUsername, approved, trained, printshop, eventCreator, printSquad, authorizerId, authorized) {
     document.getElementById('modalUserName').textContent = userName;
     document.getElementById('modalAuthorizer').value = authorizerId === null ? '' : String(authorizerId);
     document.getElementById('modalAuthorized').checked = authorized;
@@ -384,6 +397,7 @@ function openEditModal(userId, userName, risoUsername, approved, trained, prints
     document.getElementById('modalTrained').checked = trained;
     document.getElementById('modalPrintshop').checked = printshop;
     document.getElementById('modalEventCreator').checked = eventCreator;
+    document.getElementById('modalPrintSquad').checked = printSquad;
     document.getElementById('editForm').action = `/admin/users/${userId}/update`;
     document.getElementById('editModal').style.display = 'block';
 }

@@ -1,0 +1,102 @@
+<div class="container">
+    {{#if notFound}}
+        <h2>Request not found</h2>
+        <a href="/requests" class="btn btn-secondary">← All requests</a>
+    {{else}}
+    <div class="admin-header">
+        <h2>Print request #{{r.requestId}}</h2>
+        <a href="/requests" class="btn btn-secondary">← All requests</a>
+    </div>
+
+    {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
+    {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
+
+    <div class="admin-section">
+        <p>
+            <span class="status-badge {{#if r.isCompleted}}approved{{else}}pending{{/if}}">
+                {{#if r.isOpen}}Open{{/if}}{{#if r.isClaimed}}Claimed by {{#if r.claimedByMe}}you{{else}}{{r.claimedBy.name}}{{/if}}{{/if}}{{#if r.isCompleted}}Completed{{/if}}
+            </span>
+        </p>
+
+        <div class="detail-grid">
+            <div class="detail-group"><strong>Name</strong><div>{{r.name}}</div></div>
+            <div class="detail-group"><strong>Email</strong><div><a href="mailto:{{r.email}}">{{r.email}}</a></div></div>
+            <div class="detail-group"><strong>Phone</strong><div><a href="tel:{{r.phoneE164}}">{{r.phoneE164}}</a></div></div>
+            <div class="detail-group"><strong>Needed by</strong><div>{{r.neededBy}}</div></div>
+            <div class="detail-group"><strong>Print type</strong><div>{{r.printTypeLabel}}</div></div>
+            <div class="detail-group">
+                <strong>Desired size</strong>
+                <div>{{#if r.desiredSize}}{{r.desiredSize}}{{else}}<span class="text-muted">Not specified</span>{{/if}}
+                    {{#if r.strictSize}}<span class="status-badge pending">sizing is strict</span>{{else}}<span class="text-muted">(may be resized slightly)</span>{{/if}}
+                </div>
+            </div>
+            <div class="detail-group"><strong>Submitted</strong><div>{{formatDateTime r.createdAt}}</div></div>
+            {{#if r.notes}}<div class="detail-group detail-wide"><strong>Notes</strong><div class="prewrap">{{r.notes}}</div></div>{{/if}}
+        </div>
+
+        <h4>Files</h4>
+        <ul class="file-list">
+            {{#each files}}
+                <li>
+                    <a href="/requests/{{../r.requestId}}/files/{{fileId}}" target="_blank" rel="noopener">{{filename}}</a>
+                    <span class="text-muted">({{contentType}}, {{size}})</span>
+                    <a href="/requests/{{../r.requestId}}/files/{{fileId}}?download=1" class="btn btn-sm btn-secondary">Download</a>
+                </li>
+            {{/each}}
+        </ul>
+    </div>
+
+    {{#if r.isOpen}}
+        <div class="admin-section">
+            <h3>Claim it</h3>
+            <p>Claiming tells the rest of the squad you're on it. You can also claim by reacting 👍 to the announcement in the group chat.</p>
+            <form method="POST" action="/requests/{{r.requestId}}/claim">
+                <button type="submit" class="btn btn-primary">Claim this request</button>
+            </form>
+        </div>
+    {{/if}}
+
+    {{#if r.isClaimed}}
+        <div class="admin-section">
+            <h3>Mark complete</h3>
+            {{#if r.claimedByMe}}
+                <p>When it's printed, say where and when it can be picked up. This is texted to {{r.name}} at {{r.phoneE164}}.</p>
+            {{else}}
+                <p>{{r.claimedBy.name}} claimed this. If you finished it instead, you can still complete it here; the pickup details are texted to {{r.name}} at {{r.phoneE164}}.</p>
+            {{/if}}
+            <form method="POST" action="/requests/{{r.requestId}}/complete">
+                <div class="form-group">
+                    <label for="pickupDetails">Pickup details *</label>
+                    <textarea id="pickupDetails" name="pickupDetails" rows="3" maxlength="1000" required placeholder="e.g. On the shelf by the door at the printshop, any time after 5pm Thursday."></textarea>
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">Mark complete &amp; text the requester</button>
+                </div>
+            </form>
+            {{#if r.claimedByMe}}
+                <form method="POST" action="/requests/{{r.requestId}}/unclaim" style="margin-top:1rem;">
+                    <button type="submit" class="btn btn-secondary btn-sm">Release (put it back in the queue)</button>
+                </form>
+            {{/if}}
+        </div>
+    {{/if}}
+
+    {{#if r.isCompleted}}
+        <div class="admin-section">
+            <h3>Completed {{formatDateTime r.completedAt}}</h3>
+            <p><strong>Pickup details sent:</strong></p>
+            <p class="prewrap">{{r.pickupDetails}}</p>
+        </div>
+    {{/if}}
+    {{/if}}
+</div>
+
+<style>
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.detail-wide { grid-column: 1 / -1; }
+.prewrap { white-space: pre-wrap; }
+.file-list { list-style: none; padding: 0; }
+.file-list li { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.text-muted { color: #6c757d; }
+textarea { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; }
+</style>

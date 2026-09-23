@@ -1,0 +1,52 @@
+<div class="container">
+    <div class="admin-header">
+        <h2>Print requests</h2>
+    </div>
+
+    {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
+    {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
+
+    {{#> requestTable heading="Open" rows=open empty="Nothing waiting. Nice."}}{{/requestTable}}
+    {{#> requestTable heading="In progress" rows=claimed empty="Nothing claimed right now."}}{{/requestTable}}
+    {{#> requestTable heading="Completed" rows=completed empty="Nothing completed yet."}}{{/requestTable}}
+</div>
+
+{{#*inline "requestTable"}}
+<div class="admin-section">
+    <h3>{{heading}}</h3>
+    {{#if rows.length}}
+        <div class="recent-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>From</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Needed by</th>
+                        <th>Claimed by</th>
+                        <th>Submitted</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{#each rows}}
+                    <tr>
+                        <td>{{requestId}}</td>
+                        <td>{{name}}</td>
+                        <td>{{printTypeLabel}}</td>
+                        <td>{{#if desiredSize}}{{desiredSize}}{{#if strictSize}} <span class="status-badge pending" title="Sizing is strict">strict</span>{{/if}}{{else}}<span class="text-muted">—</span>{{/if}}</td>
+                        <td>{{neededBy}}</td>
+                        <td>{{#if claimedBy}}{{#if claimedByMe}}You{{else}}{{claimedBy.name}}{{/if}}{{else}}<span class="text-muted">—</span>{{/if}}</td>
+                        <td>{{formatDate createdAt}}</td>
+                        <td><a href="/requests/{{requestId}}" class="btn btn-sm btn-primary">Open</a></td>
+                    </tr>
+                    {{/each}}
+                </tbody>
+            </table>
+        </div>
+    {{else}}
+        <p class="no-data">{{empty}}</p>
+    {{/if}}
+</div>
+{{/inline}}

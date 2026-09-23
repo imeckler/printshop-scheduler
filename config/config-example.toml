@@ -18,3 +18,12 @@ auth_token = "your_twilio_auth_token"
 verify_service_sid = "your_twilio_verify_service_sid"
 messaging_service_sid = "your_twilio_messaging_service_sid"
 phone_number = "+1234567890"
+
+# Public print request form (/request). Unset = the form is disabled.
+# request_password = "..."   (goes under [general])
+
+# WhatsApp group where new print requests are announced (optional).
+# Link the account at /admin/notifier; that page also lists group ids.
+# [whatsapp]
+# group_id = "1234567890-1234567890@g.us"
+# data_path = "./.wwebjs_auth"

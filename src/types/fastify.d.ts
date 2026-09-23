@@ -6,5 +6,8 @@ declare module 'fastify' {
   // 👇️ new property you are about to add
   interface FastifyRequest {
     user: User | null;
+    // Original filenames of multipart uploads, by field name (see the
+    // @fastify/multipart onFile hook in index.ts).
+    uploadFilenames?: Record<string, string>;
   }
 }

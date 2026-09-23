@@ -1,0 +1,155 @@
+<div class="container request-page">
+    <h1>Print job submission</h1>
+
+    {{#if submitted}}
+        <div class="alert alert-success">
+            <h3>Got it, thanks!</h3>
+            <p>Your request is in the queue. We'll text you at the number you gave when it's ready to pick up.</p>
+            <a href="/request" class="btn btn-secondary">Submit another</a>
+        </div>
+    {{else}}
+        {{#if error}}
+            <div class="alert alert-danger">{{error}}</div>
+        {{/if}}
+
+        <form method="POST" action="/request" enctype="multipart/form-data" class="application-form" id="requestForm">
+            <div class="form-section">
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" name="name" required maxlength="200" value="{{values.name}}">
+                </div>
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input type="email" id="email" name="email" required maxlength="254" value="{{values.email}}">
+                </div>
+                <div class="form-group">
+                    <label for="phone">Phone *</label>
+                    <input type="tel" id="phone" name="phone" required maxlength="30" value="{{values.phone}}" placeholder="We text this number when it's ready">
+                </div>
+                <div class="form-group">
+                    <label for="neededBy">Needed by *</label>
+                    <input type="date" id="neededBy" name="neededBy" required value="{{values.neededBy}}">
+                </div>
+
+                <div class="form-group">
+                    <label>Print type *</label>
+                    <div class="radio-list">
+                        {{#each printTypes}}
+                            <label class="radio-item">
+                                <input type="radio" name="printType" value="{{value}}" required {{#if (eq value ../values.printType)}}checked{{/if}}>
+                                {{label}}
+                            </label>
+                        {{/each}}
+                    </div>
+                    <input type="text" id="printTypeOther" name="printTypeOther" maxlength="500" value="{{values.printTypeOther}}" placeholder="Tell us what it is" style="margin-top:0.5rem; display:none;">
+                </div>
+
+                <div class="form-group">
+                    <label for="desiredSize">Desired final size (W × H, optional)</label>
+                    <input type="text" id="desiredSize" name="desiredSize" maxlength="100" value="{{values.desiredSize}}" placeholder='e.g. 11" × 17" or A3'>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="strictSize" {{#if values.strictSize}}checked{{/if}}>
+                        We may resize slightly to make the print more efficient. Check this if your sizing is strict.
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="file">Your file (PDF, PNG or JPEG, up to {{maxFileMb}} MB) *</label>
+                    <input type="file" id="file" name="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="notes">Anything else we should know? (optional)</label>
+                    <textarea id="notes" name="notes" rows="3" maxlength="2000">{{values.notes}}</textarea>
+                </div>
+            </div>
+
+            <div class="form-section riso-notes">
+                <h3>A note on how we print</h3>
+                <p>
+                    We print everything with a Risograph printer, which prints one color at a time.
+                    The easiest things to print use solid colors, like these:
+                </p>
+                <div class="riso-examples">
+                    <img src="/public/img/riso-examples/tangle.jpeg" alt="Riso print with solid colors">
+                    <img src="/public/img/riso-examples/sfs-calendar.jpeg" alt="Riso calendar with solid colors">
+                    <img src="/public/img/riso-examples/dsa-lake-merrit.jpeg" alt="Riso poster with solid colors">
+                </div>
+                <p>
+                    However, you can also mix colors (like the pancake, which is black + red + yellow), or even print photos:
+                </p>
+                <div class="riso-examples">
+                    <img src="/public/img/riso-examples/pancake-26.jpeg" alt="Riso print mixing black, red and yellow">
+                    <img src="/public/img/riso-examples/amazon-poster.jpeg" alt="Riso poster with mixed colors">
+                    <img src="/public/img/riso-examples/flowers.jpeg" alt="Riso print of a photo">
+                </div>
+
+                <p>We have the following colors:</p>
+                {{#if inks.length}}
+                    <div class="ink-list">
+                        {{#each inks}}
+                            <span class="ink-chip">
+                                <span class="ink-swatch" style="background: {{hex}}"></span>
+                                <span>{{name}}</span>
+                                <code class="ink-hex">{{hex}}</code>
+                            </span>
+                        {{/each}}
+                    </div>
+                {{else}}
+                    <p class="form-text">The current ink list isn't available right now; ask us what's stocked.</p>
+                {{/if}}
+
+                <p>
+                    It's easiest and most cost effective if you use 1–2 colors (no more than 4), and colors that
+                    can be achieved by mixing them.
+                </p>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="submitBtn">Submit request</button>
+            </div>
+        </form>
+    {{/if}}
+</div>
+
+<style>
+.request-page h1 { margin-bottom: 1.5rem; }
+.radio-list { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+.radio-item { display: flex; align-items: center; gap: 0.4rem; font-weight: normal; }
+.radio-item input { width: auto; }
+.request-page .checkbox-inline input { width: auto; margin-right: 0.5rem; }
+.request-page textarea { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; }
+.riso-examples { display: flex; flex-direction: column; gap: 1rem; margin: 1rem 0 1.5rem; }
+.riso-examples img { width: 100%; height: auto; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+.riso-notes .ink-list { margin-bottom: 1rem; }
+</style>
+
+<script>
+(function () {
+    var other = document.getElementById('printTypeOther');
+    var radios = document.querySelectorAll('input[name="printType"]');
+    function sync() {
+        var v = document.querySelector('input[name="printType"]:checked');
+        var isOther = v && v.value === 'other';
+        other.style.display = isOther ? 'block' : 'none';
+        other.required = !!isOther;
+    }
+    radios.forEach(function (r) { r.addEventListener('change', sync); });
+    sync();
+
+    var form = document.getElementById('requestForm');
+    var max = {{maxFileMb}} * 1024 * 1024;
+    form.addEventListener('submit', function (e) {
+        var f = document.getElementById('file').files[0];
+        if (f && f.size > max) {
+            e.preventDefault();
+            alert('That file is larger than {{maxFileMb}} MB. Please shrink it or send us a link.');
+            return;
+        }
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').textContent = 'Uploading…';
+    });
+})();
+</script>
