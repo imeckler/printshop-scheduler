@@ -22,8 +22,11 @@ phone_number = "+1234567890"
 # Public print request form (/request). Unset = the form is disabled.
 # request_password = "..."   (goes under [general])
 
-# WhatsApp group where new print requests are announced (optional).
-# Link the account at /admin/notifier; that page also lists group ids.
-# [whatsapp]
-# group_id = "1234567890-1234567890@g.us"
-# data_path = "./.wwebjs_auth"
+# Discord bot that announces new print requests (optional). The bot's code is
+# the public github.com/imeckler/printshop-discord-bot package; create the
+# bot under the same Discord application as [discord] and paste its token.
+# /admin/notifier shows the invite link and lists channel ids.
+# Env equivalents: DISCORD_BOT_TOKEN, DISCORD_REQUEST_CHANNEL_ID.
+# [discord_bot]
+# bot_token = "..."
+# channel_id = "123456789012345678"

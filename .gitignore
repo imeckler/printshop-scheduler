@@ -34,9 +34,6 @@ Thumbs.db
 tmp/
 temp/
 
-# whatsapp-web.js linked session + web cache
-.wwebjs_auth/
-.wwebjs_cache/
 # Claude Code personal settings
 .claude/settings.local.json
 

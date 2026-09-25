@@ -73,6 +73,10 @@ export const users = pgTable(
     eventCreator: boolean('event_creator').notNull().default(false),
     // May see and claim public print requests (/requests). Set by the admin.
     printSquad: boolean('print_squad').notNull().default(false),
+    // Linked at /discord/link (OAuth, identify scope) so a click on the
+    // bot's Claim button can be matched to this account. See lib/notify/discord.ts.
+    discordUserId: text('discord_user_id').unique(),
+    discordUsername: text('discord_username'),
     // NULL = nobody vouches for this user yet (no access). See `authorizers`.
     authorizerId: integer('authorizer_id').references(() => authorizers.authorizerId, {
       onDelete: 'set null',
@@ -416,8 +420,8 @@ export const risoLastSeenTotalsRelations = relations(risoLastSeenTotals, ({ one 
 
 // ---------------------------------------------------------------------
 // Public print requests: the password-gated /request form. Print squad
-// members see them on /requests, claim one (on the site, or by reacting to
-// the notifier's group message), and complete it with pickup details, which
+// members see them on /requests, claim one (on the site, or from the
+// notifier's group message), and complete it with pickup details, which
 // are texted to the requester.
 // ---------------------------------------------------------------------
 export const printRequests = pgTable('print_requests', {
@@ -438,9 +442,9 @@ export const printRequests = pgTable('print_requests', {
   claimedAt: timestamp('claimed_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   pickupDetails: text('pickup_details'),
-  // Where the "new request" message was posted, so a reaction to it can be
-  // matched back: channel is the notifier kind ('whatsapp' | 'discord'),
-  // ref is that channel's opaque message id.
+  // Where the "new request" message was posted, so a claim from it can be
+  // matched back: channel is the notifier kind ('discord'), ref is that
+  // channel's opaque message id.
   notificationChannel: text('notification_channel'),
   notificationRef: text('notification_ref'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

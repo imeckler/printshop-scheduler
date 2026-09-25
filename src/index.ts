@@ -63,8 +63,9 @@ import {
   authorizationUrl,
   exchangeCode,
   fetchMe,
+  LINK_SCOPES,
 } from './lib/discord';
-import { eq, desc, sql } from 'drizzle-orm';
+import { and, eq, desc, isNotNull, ne, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 import { getConfig } from './lib/config';
 import { CookieSerializeOptions } from '@fastify/cookie';
@@ -99,7 +100,6 @@ import {
   PrintType,
 } from './lib/printRequests';
 import { createRequestNotifier } from './lib/notify';
-import QRCode from 'qrcode';
 import {
   downloadsConfigured,
   formatSize,
@@ -874,11 +874,12 @@ server.post('/admin/authorizers/:id/delete', async (request, reply) => {
 // ---------------------------------------------------------------------
 const OAUTH_STATE_COOKIE = 'discord_oauth_state';
 
-server.get('/authorize/login', async (request, reply) => {
-  if (!discordConfig()) {
-    return reply.code(503).send('Discord sign-in is not configured');
-  }
-  const state = crypto.randomBytes(16).toString('hex');
+// Both Discord OAuth flows (authorizer sign-in, and print squad members
+// linking their account, see /discord/link) share the one registered
+// redirect URI; the state's prefix says which flow the callback belongs to.
+const LINK_STATE_PREFIX = 'link:';
+
+function beginDiscordOAuth(reply: FastifyReply, state: string, scope?: string) {
   reply.setCookie(OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -886,17 +887,27 @@ server.get('/authorize/login', async (request, reply) => {
     maxAge: 10 * 60,
     path: '/',
   });
-  return reply.redirect(authorizationUrl(state));
+  return reply.redirect(authorizationUrl(state, scope));
+}
+
+server.get('/authorize/login', async (request, reply) => {
+  if (!discordConfig()) {
+    return reply.code(503).send('Discord sign-in is not configured');
+  }
+  return beginDiscordOAuth(reply, crypto.randomBytes(16).toString('hex'));
 });
 
 server.get('/authorize/callback', async (request, reply) => {
   const { code, state, error } = request.query as { code?: string; state?: string; error?: string };
   reply.clearCookie(OAUTH_STATE_COOKIE, { path: '/' });
+  const isLink = !!state && state.startsWith(LINK_STATE_PREFIX);
   if (error || !code || !state || state !== request.cookies?.[OAUTH_STATE_COOKIE]) {
     return reply.redirect(
-      '/authorize?error=' + encodeURIComponent(error || 'Discord sign-in failed')
+      (isLink ? '/requests?error=' : '/authorize?error=') +
+        encodeURIComponent(error || 'Discord sign-in failed')
     );
   }
+  if (isLink) return finishDiscordLink(request, reply, code);
 
   try {
     const tokens = await exchangeCode(code);
@@ -946,6 +957,67 @@ server.post('/authorize/logout', async (request, reply) => {
   reply.clearCookie('authorizer_session', { path: '/' });
   return reply.redirect('/authorize');
 });
+
+// --- Print squad members linking their Discord account ---
+//
+// The print request bot identifies whoever clicks Claim by Discord user id, so a
+// member links that id to their site account here (OAuth with the
+// `identify` scope only; no tokens are kept).
+
+server.get(
+  '/discord/link',
+  { preHandler: requirePermissions(['printSquad']) },
+  async (_r, reply) => {
+    if (!discordConfig()) {
+      return reply.redirect('/requests?error=' + encodeURIComponent('Discord is not configured'));
+    }
+    const state = LINK_STATE_PREFIX + crypto.randomBytes(16).toString('hex');
+    return beginDiscordOAuth(reply, state, LINK_SCOPES);
+  }
+);
+
+async function finishDiscordLink(request: FastifyRequest, reply: FastifyReply, code: string) {
+  const userId = getVerifiedUserIdFromRequest(request);
+  if (!userId) return reply.redirect('/login');
+  try {
+    const tokens = await exchangeCode(code);
+    const me = await fetchMe(tokens.accessToken);
+    const taken = await db.query.users.findFirst({
+      where: and(eq(users.discordUserId, me.id), ne(users.userId, userId)),
+      columns: { userId: true },
+    });
+    if (taken) {
+      return reply.redirect(
+        '/requests?error=' +
+          encodeURIComponent(
+            `That Discord account (${me.username}) is already linked to someone else.`
+          )
+      );
+    }
+    await db
+      .update(users)
+      .set({ discordUserId: me.id, discordUsername: me.username })
+      .where(eq(users.userId, userId));
+    return reply.redirect(
+      '/requests?success=' + encodeURIComponent(`Linked Discord account ${me.username}.`)
+    );
+  } catch (err) {
+    console.error('Discord link failed:', err);
+    return reply.redirect('/requests?error=' + encodeURIComponent('Linking Discord failed'));
+  }
+}
+
+server.post(
+  '/discord/unlink',
+  { preHandler: requirePermissions(['printSquad']) },
+  async (request, reply) => {
+    await db
+      .update(users)
+      .set({ discordUserId: null, discordUsername: null })
+      .where(eq(users.userId, request.user!.userId));
+    return reply.redirect('/requests?success=' + encodeURIComponent('Discord account unlinked.'));
+  }
+);
 
 async function loadAuthorizer(request: FastifyRequest) {
   const id = getAuthorizerIdFromRequest(request);
@@ -1581,14 +1653,14 @@ server.get(
 
 // ---------------------------------------------------------------------
 // Print requests: public submission form (/request, password gated),
-// print squad pages (/requests), and the group-chat notifier.
+// print squad pages (/requests), and the Discord notifier.
 // ---------------------------------------------------------------------
 
-const requestNotifier = createRequestNotifier(config);
-handleNotifierClaims(requestNotifier);
-
-// Absolute URL base for links posted to the group chat.
+// Absolute URL base for links posted to Discord.
 const publicBaseUrl = siteUrl('');
+
+const requestNotifier = createRequestNotifier(config);
+handleNotifierClaims(requestNotifier, publicBaseUrl);
 
 // The form password (REQUEST_PASSWORD) is exchanged for a cookie so the
 // link can be shared as /request?password=... and the form then posts
@@ -1777,6 +1849,12 @@ server.get('/requests', { preHandler: requirePrintSquad }, async (request, reply
     open: all.filter(r => r.isOpen),
     claimed: all.filter(r => r.isClaimed),
     completed: all.filter(r => r.isCompleted),
+    // Claiming from Discord needs the member's Discord account linked.
+    discord: {
+      available: requestNotifier.channel === 'discord' && !!discordConfig(),
+      linked: !!me.discordUserId,
+      username: me.discordUsername,
+    },
     success,
     error,
   });
@@ -1791,13 +1869,11 @@ server.get('/requests/:id', { preHandler: requirePrintSquad }, async (request, r
   const id = requestIdParam(request);
   const r = id ? await getPrintRequest(id) : undefined;
   if (!r)
-    return reply
-      .code(404)
-      .view('request-detail', {
-        title: 'Not found',
-        notFound: true,
-        user: squadViewUser(request.user!),
-      });
+    return reply.code(404).view('request-detail', {
+      title: 'Not found',
+      notFound: true,
+      user: squadViewUser(request.user!),
+    });
   const { success, error } = request.query as { success?: string; error?: string };
   return reply.view('request-detail', {
     title: `Print request #${r.requestId}`,
@@ -1878,29 +1954,26 @@ server.post('/requests/:id/complete', { preHandler: requirePrintSquad }, async (
   return reply.redirect(`/requests/${id}?success=${encodeURIComponent(msg)}`);
 });
 
-// --- Admin: group-chat notifier status / linking ---
+// --- Admin: Discord bot status ---
 
 server.get('/admin/notifier', async (request, reply) => {
   if (!requireAdmin(request, reply)) return;
   const status = await requestNotifier.status();
-  const qrDataUrl = status.qr ? await QRCode.toDataURL(status.qr, { width: 320 }) : null;
+  const linked = await db.query.users.findMany({
+    where: isNotNull(users.discordUserId),
+    columns: { userId: true, name: true, discordUsername: true, printSquad: true },
+    orderBy: users.name,
+  });
   const { success, error } = request.query as { success?: string; error?: string };
   return reply.view('admin-notifier', {
-    title: 'Group chat notifier',
+    title: 'Print request bot',
     status,
-    qrDataUrl,
-    needsLink: status.state === 'needs_link',
     ready: status.state === 'ready',
     hasTarget: !!status.targetChatId,
+    linked,
     success,
     error,
   });
-});
-
-server.post('/admin/notifier/unlink', async (request, reply) => {
-  if (!requireAdmin(request, reply)) return;
-  await requestNotifier.unlink();
-  return reply.redirect('/admin/notifier?success=Unlinked.+Scan+the+new+QR+code+to+relink.');
 });
 
 // ---------------------------------------------------------------------
@@ -2960,7 +3033,7 @@ async function start() {
     await server.listen({ host: '0.0.0.0', port });
     console.log(`Server listening at http://localhost:${port}`);
 
-    // Bring up the group-chat notifier (WhatsApp Web session) in the background
+    // Bring up the Discord print request bot in the background
     await requestNotifier.start();
   } catch (err) {
     console.error('Failed to start server:', err);

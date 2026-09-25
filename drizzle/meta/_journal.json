@@ -85,6 +85,13 @@
       "when": 1790103875652,
       "tag": "0011_print_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790290960643,
+      "tag": "0012_discord_link",
+      "breakpoints": true
     }
   ]
 }

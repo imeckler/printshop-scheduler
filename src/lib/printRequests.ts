@@ -1,7 +1,7 @@
 // Print requests: the public /request form, the print squad's /requests
 // pages, and the claim/complete flow shared by the site and the notifier.
 
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { db } from './db';
 import { printRequestFiles, printRequests, users } from './schema';
 import { User } from './dbtypes';
@@ -124,7 +124,11 @@ const displayName = (u: { name: string | null; phoneE164: string }) => u.name ||
 
 const postedOf = (r: PrintRequest): PostedNotification | null =>
   r.notificationChannel && r.notificationRef
-    ? { channel: r.notificationChannel as PostedNotification['channel'], ref: r.notificationRef }
+    ? {
+        channel: r.notificationChannel as PostedNotification['channel'],
+        ref: r.notificationRef,
+        requestId: r.requestId,
+      }
     : null;
 
 export type ClaimResult =
@@ -201,50 +205,56 @@ export async function completePrintRequest(
   return { ok: true, request: updated, smsSent };
 }
 
-// Maps a channel identity to a site account. Each notifier channel keys on
-// something different; WhatsApp gives us a phone number, which is what
-// accounts are keyed on already. A Discord notifier would need a
-// users.discord_user_id column (plus a way for members to link it) here.
+// Maps a channel identity to a site account. Discord gives us a user id,
+// which print squad members link to their account at /discord/link.
 export async function resolveClaimant(identity: ClaimantIdentity): Promise<User | null> {
   switch (identity.kind) {
-    case 'whatsapp': {
+    case 'discord': {
       const user = await db.query.users.findFirst({
-        where: eq(users.phoneE164, identity.phoneE164),
+        where: eq(users.discordUserId, identity.discordUserId),
       });
       return user ?? null;
     }
-    case 'discord':
-      return null;
   }
 }
 
-const escapeLike = (s: string) => s.replace(/[\\%_]/g, c => `\\${c}`);
-
-// Wires the notifier's claim events (a 👍 on the announcement) into the DB.
-export function handleNotifierClaims(notifier: RequestNotifier) {
-  notifier.onClaim(async ({ posted: reactedTo, claimant }: ClaimEvent) => {
-    // See ClaimEvent: the event's ref is a substring of the stored one.
+// Wires the notifier's claim events (the Claim button under the
+// announcement) into the DB. `baseUrl` is used to tell unlinked claimants
+// where to link their account.
+export function handleNotifierClaims(notifier: RequestNotifier, baseUrl: string) {
+  notifier.onClaim(async ({ posted: claimedFrom, claimant, replyPrivately }: ClaimEvent) => {
+    // Only a ref we stored when announcing is one of ours.
     const request = await db.query.printRequests.findFirst({
       where: and(
-        eq(printRequests.notificationChannel, reactedTo.channel),
-        like(printRequests.notificationRef, `%${escapeLike(reactedTo.ref)}%`)
+        eq(printRequests.notificationChannel, claimedFrom.channel),
+        eq(printRequests.notificationRef, claimedFrom.ref)
       ),
     });
-    if (!request) return; // a reaction to some other message
-    const posted = postedOf(request)!; // full ref, so replies can quote it
+    if (!request) return; // an announcement we have no record of
+    const posted = postedOf(request)!;
+    // Problems concern only the claimant, so tell them privately when the
+    // channel allows it.
+    const tellClaimant = (text: string) =>
+      replyPrivately ? replyPrivately(text) : notifier.postClaimFailed(posted, text);
 
+    // Being in the channel is the authorization here: the server's admins
+    // decide who can see it, and the print squad flag says which linked
+    // account counts. The site's authorizer/vouching check is deliberately
+    // not applied to claims from Discord.
     const user = await resolveClaimant(claimant);
     if (!user || !user.printSquad) {
-      await notifier.postClaimFailed(
-        posted,
-        "Couldn't match your number to a print squad account, so this isn't claimed. Claim it on the website instead, or another print squad member can claim it with 👍."
+      await tellClaimant(
+        `Your Discord account isn't linked to a print squad account, so this isn't claimed. Link it at <${baseUrl}/discord/link>, or claim on the website.`
       );
       return;
     }
 
-    // Already theirs (they re-reacted, or the reaction was re-delivered):
-    // nothing to do and nothing to say.
-    if (request.status === 'claimed' && request.claimedByUserId === user.userId) return;
+    // Already theirs (they clicked again): nothing to do; just say so to
+    // them, since the click was acknowledged without any visible change.
+    if (request.status === 'claimed' && request.claimedByUserId === user.userId) {
+      if (replyPrivately) await replyPrivately('This one is already yours.');
+      return;
+    }
 
     const result = await claimPrintRequest(request.requestId, user);
     if (result.ok) {
@@ -255,12 +265,9 @@ export function handleNotifierClaims(notifier: RequestNotifier) {
       const owner = await db.query.users.findFirst({
         where: eq(users.userId, result.request.claimedByUserId),
       });
-      await notifier.postClaimFailed(
-        posted,
-        `Already claimed by ${owner ? displayName(owner) : 'someone else'}.`
-      );
+      await tellClaimant(`Already claimed by ${owner ? displayName(owner) : 'someone else'}.`);
     } else if (result.reason === 'completed') {
-      await notifier.postClaimFailed(posted, 'This request is already completed.');
+      await tellClaimant('This request is already completed.');
     }
   });
 }

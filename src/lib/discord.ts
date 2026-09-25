@@ -31,14 +31,18 @@ export function redirectUri(): string {
   return `${proto}://${domain}/authorize/callback`;
 }
 
-export function authorizationUrl(state: string): string {
+// Scope for print squad members linking their Discord account (we only need
+// their user id). Same OAuth app and redirect URI as authorizers.
+export const LINK_SCOPES = 'identify';
+
+export function authorizationUrl(state: string, scope: string = SCOPES): string {
   const cfg = discordConfig();
   if (!cfg) throw new Error('Discord not configured');
   const params = new URLSearchParams({
     client_id: cfg.client_id,
     response_type: 'code',
     redirect_uri: redirectUri(),
-    scope: SCOPES,
+    scope,
     state,
     prompt: 'consent',
   });

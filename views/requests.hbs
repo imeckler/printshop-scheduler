@@ -6,6 +6,24 @@
     {{#if success}}<div class="alert alert-success">{{success}}</div>{{/if}}
     {{#if error}}<div class="alert alert-danger">{{error}}</div>{{/if}}
 
+    {{#if discord.available}}
+        <div class="admin-section">
+            {{#if discord.linked}}
+                <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                    <span>Your Discord account <strong>{{discord.username}}</strong> is linked: clicking <strong>Claim</strong> under a request announcement in Discord claims it for you.</span>
+                    <form method="POST" action="/discord/unlink" style="margin:0;">
+                        <button type="submit" class="btn btn-sm btn-secondary">Unlink</button>
+                    </form>
+                </div>
+            {{else}}
+                <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                    <span>New requests are announced in Discord, where you can claim one with the <strong>Claim</strong> button. For that to count, link your Discord account first:</span>
+                    <a href="/discord/link" class="btn btn-sm btn-primary">Link Discord account</a>
+                </div>
+            {{/if}}
+        </div>
+    {{/if}}
+
     {{#> requestTable heading="Open" rows=open empty="Nothing waiting. Nice."}}{{/requestTable}}
     {{#> requestTable heading="In progress" rows=claimed empty="Nothing claimed right now."}}{{/requestTable}}
     {{#> requestTable heading="Completed" rows=completed empty="Nothing completed yet."}}{{/requestTable}}

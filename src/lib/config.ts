@@ -27,14 +27,13 @@ export interface DiscordConfig {
   poll_interval_minutes: number;
 }
 
-// Group chat that new print requests are announced in (see lib/notify).
-// group_id is a WhatsApp chat id like "1234567890-1234567890@g.us"; the
-// admin page /admin/notifier lists the ids of groups the linked account is
-// in. Leave it blank until you have it: the client still links and lists.
-export interface WhatsAppConfig {
-  group_id?: string;
-  // Where whatsapp-web.js keeps the linked session (default ./.wwebjs_auth).
-  data_path?: string;
+// Discord bot that announces new print requests (see lib/notify). The bot's
+// code is the public printshop-discord-bot package. channel_id is the
+// channel it posts in; /admin/notifier lists the channels the bot can see,
+// so it can be left blank until you have it.
+export interface DiscordBotConfig {
+  bot_token: string;
+  channel_id?: string;
 }
 
 export interface AppConfig {
@@ -57,14 +56,14 @@ export interface AppConfig {
   twilio?: TwilioConfig;
   riso?: RisoConfig;
   discord?: DiscordConfig;
-  whatsapp?: WhatsAppConfig;
+  discord_bot?: DiscordBotConfig;
 }
 
-const whatsappFromEnv = (): WhatsAppConfig | undefined => {
-  if (process.env.WHATSAPP_ENABLED !== 'true' && !process.env.WHATSAPP_GROUP_ID) return undefined;
+const discordBotFromEnv = (): DiscordBotConfig | undefined => {
+  if (!process.env.DISCORD_BOT_TOKEN) return undefined;
   return {
-    group_id: process.env.WHATSAPP_GROUP_ID || undefined,
-    data_path: process.env.WHATSAPP_DATA_PATH || undefined,
+    bot_token: process.env.DISCORD_BOT_TOKEN,
+    channel_id: process.env.DISCORD_REQUEST_CHANNEL_ID || undefined,
   };
 };
 
@@ -127,7 +126,7 @@ const configFromEnv = (): AppConfig => {
     config.discord = discordFromEnv(required);
   }
 
-  config.whatsapp = whatsappFromEnv();
+  config.discord_bot = discordBotFromEnv();
 
   return config;
 };
@@ -157,17 +156,20 @@ export const getConfig = (): AppConfig => {
     if (config.discord && !config.discord.poll_interval_minutes) {
       config.discord.poll_interval_minutes = 5;
     }
+    if (config.discord_bot && !config.discord_bot.bot_token) {
+      exitWithError('[discord_bot] needs bot_token (or set DISCORD_BOT_TOKEN)');
+    }
     if (process.env.REQUEST_PASSWORD) {
       config.general.request_password = process.env.REQUEST_PASSWORD;
     }
-    // Env vars overlay the [whatsapp] table rather than replacing it, so
-    // e.g. WHATSAPP_ENABLED=true keeps a group_id set in the file.
-    const whatsappEnv = whatsappFromEnv();
-    if (whatsappEnv) {
-      config.whatsapp = {
-        ...config.whatsapp,
-        ...(whatsappEnv.group_id ? { group_id: whatsappEnv.group_id } : {}),
-        ...(whatsappEnv.data_path ? { data_path: whatsappEnv.data_path } : {}),
+    // Env vars overlay the [discord_bot] table rather than replacing it, so
+    // e.g. DISCORD_BOT_TOKEN alone keeps a channel_id set in the file.
+    const botEnv = discordBotFromEnv();
+    if (botEnv) {
+      config.discord_bot = {
+        ...config.discord_bot,
+        bot_token: botEnv.bot_token,
+        ...(botEnv.channel_id ? { channel_id: botEnv.channel_id } : {}),
       };
     }
 

@@ -1,6 +1,6 @@
 <div class="container">
     <div class="admin-header">
-        <h2>Print request notifier</h2>
+        <h2>Print request bot (Discord)</h2>
         <div>
             <a href="/admin/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
         </div>
@@ -15,24 +15,27 @@
             &nbsp;·&nbsp;
             <strong>State:</strong>
             <span class="status-badge {{#if ready}}approved{{else}}pending{{/if}}">{{status.state}}</span>
+            {{#if status.botName}}&nbsp;·&nbsp; <strong>Bot:</strong> {{status.botName}}{{/if}}
         </p>
         {{#if status.detail}}<p>{{status.detail}}</p>{{/if}}
 
-        {{#if needsLink}}
-            <p>Open WhatsApp on the phone that owns the announcing account → <em>Linked devices</em> → <em>Link a device</em>, and scan:</p>
-            <img src="{{qrDataUrl}}" alt="WhatsApp link QR code" width="320" height="320" style="display:block; margin: 1rem 0; border: 1px solid #ddd;">
-            <p class="form-text">The code rotates every ~30 s; reload this page if it stops working.</p>
+        {{#if status.inviteUrl}}
+            <p>To add the bot to a server, a server admin opens
+                <a href="{{status.inviteUrl}}" target="_blank" rel="noopener">this invite link</a>.
+                The bot's source is public at
+                <a href="https://github.com/imeckler/printshop-discord-bot" target="_blank" rel="noopener">github.com/imeckler/printshop-discord-bot</a>
+                for them to review first.</p>
         {{/if}}
 
         {{#if ready}}
-            <h4>Announcement group</h4>
+            <h4>Announcement channel</h4>
             {{#if hasTarget}}
-                <p>Posting to <strong>{{#if status.targetChatName}}{{status.targetChatName}}{{else}}<span class="text-danger">a group this account isn't in</span>{{/if}}</strong> <code>{{status.targetChatId}}</code></p>
+                <p>Posting to <strong>{{#if status.targetChatName}}{{status.targetChatName}}{{else}}<span class="text-danger">a channel the bot can't see or post in</span>{{/if}}</strong> <code>{{status.targetChatId}}</code></p>
             {{else}}
-                <p class="text-danger">No group configured, so requests are saved but not announced. Set <code>WHATSAPP_GROUP_ID</code> to one of the ids below and restart.</p>
+                <p class="text-danger">No channel configured, so requests are saved but not announced. Set <code>DISCORD_REQUEST_CHANNEL_ID</code> to one of the ids below and restart.</p>
             {{/if}}
 
-            <h4>Groups this account is in</h4>
+            <h4>Channels the bot can post in</h4>
             {{#if status.chats.length}}
                 <div class="recent-table">
                     <table>
@@ -45,21 +48,40 @@
                     </table>
                 </div>
             {{else}}
-                <p class="no-data">No groups found.</p>
+                <p class="no-data">None. Has the bot been added to the server (invite link above), and can it see a text channel?</p>
             {{/if}}
+        {{/if}}
+    </div>
 
-            <form method="POST" action="/admin/notifier/unlink" onsubmit="return confirm('Unlink this WhatsApp account? You will need to scan a new QR code.')" style="margin-top:1.5rem;">
-                <button type="submit" class="btn btn-danger btn-sm">Unlink account</button>
-            </form>
+    <div class="admin-section">
+        <h4>Linked Discord accounts</h4>
+        <p class="form-text">Print squad members link their Discord account on <code>/requests</code> so their click on the <strong>Claim</strong> button counts as a claim.</p>
+        {{#if linked.length}}
+            <div class="recent-table">
+                <table>
+                    <thead><tr><th>Member</th><th>Discord</th><th>Print squad</th></tr></thead>
+                    <tbody>
+                        {{#each linked}}
+                            <tr>
+                                <td>{{name}}</td>
+                                <td>{{discordUsername}}</td>
+                                <td><span class="status-badge {{#if printSquad}}approved{{else}}pending{{/if}}">{{#if printSquad}}✅ Yes{{else}}❌ No{{/if}}</span></td>
+                            </tr>
+                        {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <p class="no-data">Nobody has linked a Discord account yet.</p>
         {{/if}}
     </div>
 
     <div class="admin-section">
         <h4>How it works</h4>
         <ul>
-            <li>Every new submission on <code>/request</code> is posted to the group with a link to its <code>/requests/…</code> page.</li>
-            <li>A print squad member reacts 👍 to that message to claim it. They're matched to their account by phone number, so the number they use for WhatsApp must be the one they log in here with.</li>
-            <li>Completing a request on the site texts the requester the pickup details and posts a follow-up in the group.</li>
+            <li>Every new submission on <code>/request</code> is posted by the bot to the channel above with a link to its <code>/requests/…</code> page.</li>
+            <li>A print squad member clicks <strong>Claim</strong> under that message to claim it. They're matched to their account by Discord user id, so they must have linked their Discord account first; otherwise the bot tells them (privately) where to do so.</li>
+            <li>Completing a request on the site texts the requester the pickup details and posts a follow-up in the channel.</li>
         </ul>
     </div>
 </div>
