@@ -205,7 +205,7 @@
 .users-table {
     background: white;
     border-radius: 8px;
-    overflow: hidden;
+    overflow-x: auto;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
@@ -219,6 +219,8 @@
     padding: 12px;
     text-align: left;
     border-bottom: 1px solid #eee;
+    white-space: nowrap;
+    background-color: white;
 }
 
 .table th {
@@ -227,8 +229,16 @@
     color: #495057;
 }
 
-.table tr:hover {
+.table tr:hover td {
     background-color: #f8f9fa;
+}
+
+/* Keep the Actions column visible while the table scrolls horizontally. */
+.table th:last-child,
+.table td:last-child {
+    position: sticky;
+    right: 0;
+    box-shadow: -4px 0 6px -4px rgba(0,0,0,0.15);
 }
 
 .status-badge {
